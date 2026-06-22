@@ -19,6 +19,7 @@ const user = ref(null);
 const effectiveOrgId = computed(() => Utils.effectiveOrgId(user.value));
 const isSystemAdmin = computed(() => Utils.isSystemAdmin(user.value));
 const isAllOrgsView = computed(() => isSystemAdmin.value && !effectiveOrgId.value);
+const showOrgScopeNotice = computed(() => Utils.showOrgScopeNotice(user.value));
 const resolvedOrgName = ref(null);
 const orgLabel = computed(() => {
   const orgId = effectiveOrgId.value;
@@ -117,10 +118,10 @@ onUnmounted(() => {
       <v-btn color="primary" :disabled="needsOrgSelection" @click="showAddDialog = true">Add trip</v-btn>
     </div>
 
-    <v-alert v-if="isAllOrgsView" type="info" variant="tonal" density="compact" class="mb-4">
+    <v-alert v-if="showOrgScopeNotice && isAllOrgsView" type="info" variant="tonal" density="compact" class="mb-4">
       Showing trips from all organizations. Select an organization in the menu bar to add a trip or filter by one org.
     </v-alert>
-    <v-alert v-else-if="orgLabel" type="info" variant="tonal" density="compact" class="mb-4">
+    <v-alert v-else-if="showOrgScopeNotice && orgLabel" type="info" variant="tonal" density="compact" class="mb-4">
       Showing trips for {{ orgLabel }}.
     </v-alert>
 

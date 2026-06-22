@@ -22,6 +22,7 @@ const filterTripId = ref(null);
 const effectiveOrgId = computed(() => Utils.effectiveOrgId(user.value));
 const isSystemAdmin = computed(() => Utils.isSystemAdmin(user.value));
 const isAllOrgsView = computed(() => isSystemAdmin.value && !effectiveOrgId.value);
+const showOrgScopeNotice = computed(() => Utils.showOrgScopeNotice(user.value));
 const resolvedOrgName = ref(null);
 const orgLabel = computed(() => {
   const orgId = effectiveOrgId.value;
@@ -159,10 +160,10 @@ onUnmounted(() => {
       <v-btn color="primary" :disabled="!canAddPerson" @click="showAddDialog = true">Add person</v-btn>
     </div>
 
-    <v-alert v-if="isAllOrgsView" type="info" variant="tonal" density="compact" class="mb-4">
+    <v-alert v-if="showOrgScopeNotice && isAllOrgsView" type="info" variant="tonal" density="compact" class="mb-4">
       Showing people from all organizations. Select an organization in the menu bar to add a person or filter by one org.
     </v-alert>
-    <v-alert v-else-if="orgLabel" type="info" variant="tonal" density="compact" class="mb-4">
+    <v-alert v-else-if="showOrgScopeNotice && orgLabel" type="info" variant="tonal" density="compact" class="mb-4">
       Showing people for {{ orgLabel }}.
     </v-alert>
 

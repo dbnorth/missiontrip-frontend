@@ -31,6 +31,7 @@ const orgLabel = computed(() => {
     null
   );
 });
+const showOrgScopeNotice = computed(() => Utils.showOrgScopeNotice(user.value));
 const needsOrgSelection = computed(() => user.value?.isAdmin && !effectiveOrgId.value);
 
 const tripItems = computed(() => trips.value.map((t) => ({ title: t.name, value: t.id })));
@@ -176,7 +177,7 @@ onMounted(() => {
     <v-alert v-if="needsOrgSelection" type="warning" density="compact" class="mb-4">
       Select an organization using the menu bar to view participants.
     </v-alert>
-    <v-alert v-else-if="orgLabel" type="info" variant="tonal" density="compact" class="mb-4">
+    <v-alert v-else-if="showOrgScopeNotice && orgLabel" type="info" variant="tonal" density="compact" class="mb-4">
       Showing participants for {{ orgLabel }}.
     </v-alert>
 

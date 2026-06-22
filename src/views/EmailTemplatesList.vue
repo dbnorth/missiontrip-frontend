@@ -41,6 +41,7 @@ const orgLabel = computed(() => {
   if (!orgId) return null;
   return Utils.orgDisplayName(user.value, orgId);
 });
+const showOrgScopeNotice = computed(() => Utils.showOrgScopeNotice(user.value));
 const needsOrgSelection = computed(() => isSystemAdmin.value && !effectiveOrgId.value && !isTripLeader.value);
 
 const tripOptions = computed(() =>
@@ -178,10 +179,10 @@ onUnmounted(() => {
     <v-alert v-else-if="isGlobalView" type="info" variant="tonal" density="compact" class="mb-4">
       Showing global master templates (no organization). Use these as starting points to copy into organizations.
     </v-alert>
-    <v-alert v-else-if="isTripLeaderOnly && orgLabel" type="info" variant="tonal" density="compact" class="mb-4">
+    <v-alert v-else-if="showOrgScopeNotice && isTripLeaderOnly && orgLabel" type="info" variant="tonal" density="compact" class="mb-4">
       Showing email templates for trips you lead in {{ orgLabel }}.
     </v-alert>
-    <v-alert v-else-if="orgLabel" type="info" variant="tonal" density="compact" class="mb-4">
+    <v-alert v-else-if="showOrgScopeNotice && orgLabel" type="info" variant="tonal" density="compact" class="mb-4">
       Showing templates for {{ orgLabel }}.
     </v-alert>
 

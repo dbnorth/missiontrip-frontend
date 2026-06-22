@@ -102,6 +102,12 @@ export default class Utils {
       .map((r) => r.orgName)
       .filter(Boolean);
 
+  static showOrgScopeNotice = (user) => {
+    if (!user) return false;
+    if (Utils.isSystemAdmin(user)) return true;
+    return Utils.getSelectableOrgs(user).length > 1;
+  };
+
   static orgDisplayName = (user, orgId) => {
     if (!user || orgId == null) return null;
     const id = Number(orgId);
