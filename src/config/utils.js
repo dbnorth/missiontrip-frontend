@@ -127,6 +127,19 @@ export default class Utils {
     return match?.orgName || null;
   };
 
+  static setCurrentOrg = (orgId, orgName = null) => {
+    const stored = Utils.getStore("user");
+    if (!stored) return;
+    const updated = {
+      ...stored,
+      currentOrgId: orgId == null || orgId === "" ? null : Number(orgId),
+    };
+    if (orgName) updated.currentOrgName = orgName;
+    else if (orgId == null || orgId === "") updated.currentOrgName = null;
+    Utils.setStore("user", updated);
+    window.dispatchEvent(new CustomEvent("user-updated"));
+  };
+
   static currentOrg = (user) => {
     const orgId = Utils.effectiveOrgId(user);
     if (!orgId) return null;

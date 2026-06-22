@@ -5,6 +5,7 @@ import TripServices from "../services/tripServices.js";
 import TripPeopleRoleServices from "../services/tripPeopleRoleServices.js";
 import DonationServices from "../services/donationServices.js";
 import AddTripParticipantDialog from "../components/AddTripParticipantDialog.vue";
+import EditTripParticipantDialog from "../components/EditTripParticipantDialog.vue";
 import ParticipantDonationsDialog from "../components/ParticipantDonationsDialog.vue";
 import EditTripDialog from "../components/EditTripDialog.vue";
 import { formatMoneyDisplay } from "../utils/moneyUtils.js";
@@ -20,6 +21,8 @@ const donations = ref([]);
 const loading = ref(false);
 const message = ref("");
 const showAddParticipant = ref(false);
+const showEditParticipant = ref(false);
+const editParticipant = ref(null);
 const showEditTrip = ref(false);
 const showDonations = ref(false);
 const donationsParticipant = ref(null);
@@ -73,21 +76,14 @@ const refresh = async () => {
   }
 };
 
-const removeParticipant = (row) => {
-  if (!confirm(`Remove ${participantName(row)} from this trip?`)) return;
-  TripPeopleRoleServices.delete(row.id)
-    .then(() => {
-      message.value = "Participant removed.";
-      loadParticipants();
-    })
-    .catch((e) => {
-      message.value = e.response?.data?.message || "Error removing participant.";
-    });
-};
-
 const openDonations = (row) => {
   donationsParticipant.value = row;
   showDonations.value = true;
+};
+
+const openEdit = (row) => {
+  editParticipant.value = row;
+  showEditParticipant.value = true;
 };
 
 const onParticipantAdded = () => {
@@ -95,10 +91,18 @@ const onParticipantAdded = () => {
   loadParticipants();
 };
 
+const onParticipantUpdated = () => {
+  message.value = "Participant updated.";
+  loadParticipants();
+};
+
 const formatDonationTotal = (row) => formatMoneyDisplay(row.donationTotal ?? 0) || "$0.00";
 
 const formatParticipantCost = (value) =>
   value != null ? formatMoneyDisplay(value) : "—";
+
+const rowParticipantCost = (row) =>
+  formatParticipantCost(row.participantCost ?? trip.value?.participantCost);
 
 const onDonationsChanged = () => {
   loadParticipants();
@@ -197,12 +201,12 @@ onMounted(refresh);
     >
       <template #item.name="{ item }">{{ participantName(item) }}</template>
       <template #item.role="{ item }">{{ item.role?.roleName || "—" }}</template>
-      <template #item.participantCost="{ item }">{{ formatParticipantCost(trip?.participantCost) }}</template>
+      <template #item.participantCost="{ item }">{{ rowParticipantCost(item) }}</template>
       <template #item.donationTotal="{ item }">{{ formatDonationTotal(item) }}</template>
       <template #item.whygoText="{ item }">{{ item.whygoText || "—" }}</template>
       <template #item.actions="{ item }">
+        <v-btn size="small" variant="text" @click="openEdit(item)">Edit</v-btn>
         <v-btn size="small" variant="text" @click="openDonations(item)">View donations</v-btn>
-        <v-btn size="small" variant="text" color="error" @click="removeParticipant(item)">Remove</v-btn>
       </template>
     </v-data-table>
 
@@ -210,6 +214,11 @@ onMounted(refresh);
       v-model="showAddParticipant"
       :trip-id="tripId"
       @saved="onParticipantAdded"
+    />
+    <EditTripParticipantDialog
+      v-model="showEditParticipant"
+      :participant="editParticipant"
+      @saved="onParticipantUpdated"
     />
     <ParticipantDonationsDialog
       v-model="showDonations"

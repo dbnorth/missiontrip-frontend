@@ -70,7 +70,11 @@ const orgAdminOrgItems = computed(() =>
 const orgDisplayName = computed(() => {
   if (form.value.organization?.name) return form.value.organization.name;
   const org = orgAdminOrgs.value.find((r) => Number(r.orgId) === Number(form.value.orgId));
-  return org?.orgName || organizations.value.find((o) => o.id === form.value.orgId)?.name || "";
+  if (org?.orgName) return org.orgName;
+  if (form.value.orgId) {
+    return Utils.orgDisplayName(user.value, form.value.orgId) || "";
+  }
+  return organizations.value.find((o) => o.id === form.value.orgId)?.name || "";
 });
 
 const applyTripData = (data) => {

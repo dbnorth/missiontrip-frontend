@@ -2,7 +2,10 @@
 import { ref, watch } from "vue";
 import PersonServices from "../services/personServices.js";
 import RoleServices from "../services/roleServices.js";
+import TripServices from "../services/tripServices.js";
 import TripPeopleRoleServices from "../services/tripPeopleRoleServices.js";
+import MoneyInput from "./MoneyInput.vue";
+import { formatMoneyDisplay, parseMoneyAmount } from "../utils/moneyUtils.js";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -13,21 +16,37 @@ const emit = defineEmits(["update:modelValue", "saved"]);
 
 const people = ref([]);
 const roles = ref([]);
+const tripDefaultCost = ref(null);
 const saving = ref(false);
 const formError = ref("");
-const form = ref({ peopleId: null, roleId: null, status: "active", whygoText: "" });
+const form = ref({
+  peopleId: null,
+  roleId: null,
+  status: "active",
+  participantCost: "",
+  whygoText: "",
+});
 
 const personLabel = (p) => `${p.firstName || ""} ${p.lastName || ""}`.trim();
 
 const loadOptions = async () => {
-  const [peopleRes, rolesRes] = await Promise.all([PersonServices.getAll(), RoleServices.getAll()]);
-  people.value = peopleRes.data || [];
+  const [peopleRes, rolesRes, tripRes, existingRes] = await Promise.all([
+    PersonServices.getAll(),
+    RoleServices.getAll(),
+    TripServices.get(props.tripId),
+    TripPeopleRoleServices.getAll(props.tripId),
+  ]);
+  const existingPeopleIds = new Set((existingRes.data || []).map((r) => Number(r.peopleId)));
+  people.value = (peopleRes.data || []).filter((p) => !existingPeopleIds.has(Number(p.id)));
   roles.value = (rolesRes.data || []).filter((r) => r.roleName !== "Org Admin");
   const participantRole = roles.value.find((r) => r.roleName === "Trip Participant");
+  const trip = tripRes.data;
+  tripDefaultCost.value = trip?.participantCost ?? null;
   form.value = {
     peopleId: null,
     roleId: participantRole?.id ?? roles.value[0]?.id ?? null,
     status: "active",
+    participantCost: "",
     whygoText: "",
   };
   formError.value = "";
@@ -54,13 +73,17 @@ const save = () => {
 
   saving.value = true;
   formError.value = "";
-  TripPeopleRoleServices.create({
+  const payload = {
     tripId: Number(props.tripId),
     peopleId: Number(form.value.peopleId),
     roleId: Number(form.value.roleId),
     status: form.value.status,
     whygoText: form.value.whygoText?.trim() || null,
-  })
+  };
+  const cost = parseMoneyAmount(form.value.participantCost);
+  if (cost != null) payload.participantCost = cost;
+
+  TripPeopleRoleServices.create(payload)
     .then(() => {
       emit("saved");
       close();
@@ -101,6 +124,14 @@ const save = () => {
           label="Status"
           density="compact"
         />
+        <MoneyInput
+          v-model="form.participantCost"
+          label="Participant cost (optional)"
+          class="mb-1"
+        />
+        <div v-if="tripDefaultCost != null" class="text-caption text-medium-emphasis mb-2">
+          Leave blank to use the trip default of {{ formatMoneyDisplay(tripDefaultCost) }}.
+        </div>
         <v-textarea v-model="form.whygoText" label="Why go" density="compact" rows="2" />
         <v-alert v-if="formError" type="error" density="compact" class="mt-2">{{ formError }}</v-alert>
       </v-card-text>

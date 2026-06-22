@@ -70,6 +70,12 @@ const showTripLeaderNav = computed(() =>
   (user.value?.tripRoles || []).some((r) => r.roleName === "Trip Leader")
 );
 
+const isTripLeaderOnly = computed(
+  () => showTripLeaderNav.value && !showOrgAdminNav.value && !user.value?.isAdmin
+);
+
+const tripPeopleNavLabel = computed(() => (isTripLeaderOnly.value ? "Trips" : "Participants"));
+
 const showParticipantNav = computed(() =>
   (user.value?.tripRoles || []).some((r) => r.roleName === "Trip Participant")
 );
@@ -255,7 +261,7 @@ onMounted(() => {
       <v-btn v-if="user.isAdmin || showOrgAdminNav" variant="text" :to="{ name: 'people' }">People</v-btn>
       <v-btn v-if="user.isAdmin" variant="text" :to="{ name: 'organizations' }">Organizations</v-btn>
       <v-btn v-if="showOrgAdminNav || user.isAdmin" variant="text" :to="{ name: 'trips' }">Trips</v-btn>
-      <v-btn v-if="showOrgAdminNav || showTripLeaderNav" variant="text" :to="{ name: 'tripPeople' }">Participants</v-btn>
+      <v-btn v-if="showOrgAdminNav || showTripLeaderNav" variant="text" :to="{ name: 'tripPeople' }">{{ tripPeopleNavLabel }}</v-btn>
       <v-btn v-if="showOrgAdminNav || showTripLeaderNav || showParticipantNav" variant="text" :to="{ name: 'donations' }">Donations</v-btn>
       <v-btn v-if="user.isAdmin || showOrgAdminNav || showTripLeaderNav" variant="text" :to="{ name: 'templates' }">Templates</v-btn>
 

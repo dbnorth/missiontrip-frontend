@@ -1,14 +1,17 @@
 <script setup>
-import { ref, computed, onMounted, watch } from "vue";
+import { ref, computed, onMounted, onUnmounted, watch } from "vue";
+import { useRoute } from "vue-router";
 import TripServices from "../services/tripServices.js";
 import TripPeopleRoleServices from "../services/tripPeopleRoleServices.js";
 import AddTripParticipantDialog from "../components/AddTripParticipantDialog.vue";
+import EditTripParticipantDialog from "../components/EditTripParticipantDialog.vue";
 import ParticipantDonationsDialog from "../components/ParticipantDonationsDialog.vue";
 import EditTripDialog from "../components/EditTripDialog.vue";
 import Utils from "../config/utils.js";
 import { formatMoneyDisplay } from "../utils/moneyUtils.js";
 import { countryName } from "../utils/locationData.js";
 
+const route = useRoute();
 const user = ref(null);
 const trips = ref([]);
 const trip = ref(null);
@@ -17,6 +20,8 @@ const selectedTripId = ref(null);
 const loading = ref(false);
 const message = ref("");
 const showAddParticipant = ref(false);
+const showEditParticipant = ref(false);
+const editParticipant = ref(null);
 const showEditTrip = ref(false);
 const showDonations = ref(false);
 const donationsParticipant = ref(null);
@@ -33,6 +38,13 @@ const orgLabel = computed(() => {
 });
 const showOrgScopeNotice = computed(() => Utils.showOrgScopeNotice(user.value));
 const needsOrgSelection = computed(() => user.value?.isAdmin && !effectiveOrgId.value);
+const isTripLeaderOnly = computed(() => {
+  if (!user.value || user.value.isAdmin) return false;
+  const isOrgAdmin = (user.value.orgRoles || []).some((r) => r.roleName === "Org Admin");
+  const isTripLeader = (user.value.tripRoles || []).some((r) => r.roleName === "Trip Leader");
+  return isTripLeader && !isOrgAdmin;
+});
+const pageTitle = computed(() => (isTripLeaderOnly.value ? "Trips" : "Participants"));
 
 const tripItems = computed(() => trips.value.map((t) => ({ title: t.name, value: t.id })));
 
@@ -53,6 +65,24 @@ const formatDonationTotal = (row) => formatMoneyDisplay(row.donationTotal ?? 0) 
 
 const formatParticipantCost = (value) =>
   value != null ? formatMoneyDisplay(value) : "—";
+
+const rowParticipantCost = (row) =>
+  formatParticipantCost(row.participantCost ?? trip.value?.participantCost);
+
+const applyRouteContext = () => {
+  const orgId = route.query.orgId;
+  if (orgId != null && orgId !== "") {
+    const id = Number(orgId);
+    if (Number(Utils.effectiveOrgId(user.value)) !== id) {
+      Utils.setCurrentOrg(id);
+    }
+    user.value = Utils.getStore("user");
+  }
+  const tripId = route.query.tripId;
+  if (tripId != null && tripId !== "") {
+    selectedTripId.value = Number(tripId);
+  }
+};
 
 const loadTrips = () => {
   if (needsOrgSelection.value) {
@@ -112,25 +142,23 @@ const refresh = async () => {
   }
 };
 
-const removeParticipant = (row) => {
-  if (!confirm(`Remove ${participantName(row)} from this trip?`)) return;
-  TripPeopleRoleServices.delete(row.id)
-    .then(() => {
-      message.value = "Participant removed.";
-      loadParticipants();
-    })
-    .catch((e) => {
-      message.value = e.response?.data?.message || "Error removing participant.";
-    });
-};
-
 const openDonations = (row) => {
   donationsParticipant.value = row;
   showDonations.value = true;
 };
 
+const openEdit = (row) => {
+  editParticipant.value = row;
+  showEditParticipant.value = true;
+};
+
 const onParticipantAdded = () => {
   message.value = "Participant added.";
+  loadParticipants();
+};
+
+const onParticipantUpdated = () => {
+  message.value = "Participant updated.";
   loadParticipants();
 };
 
@@ -153,17 +181,30 @@ const onUserUpdated = () => {
   loadTrips().then(refresh);
 };
 
+watch(
+  () => [route.query.tripId, route.query.orgId],
+  () => {
+    applyRouteContext();
+    loadTrips().then(refresh);
+  }
+);
+
 onMounted(() => {
   user.value = Utils.getStore("user");
+  applyRouteContext();
   loadTrips().then(refresh);
   window.addEventListener("user-updated", onUserUpdated);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("user-updated", onUserUpdated);
 });
 </script>
 
 <template>
   <v-container>
     <div class="d-flex align-center justify-space-between mb-4">
-      <h1 class="text-h5">Participants</h1>
+      <h1 class="text-h5">{{ pageTitle }}</h1>
       <v-btn
         v-if="trip"
         color="primary"
@@ -242,12 +283,12 @@ onMounted(() => {
     >
       <template #item.name="{ item }">{{ participantName(item) }}</template>
       <template #item.role="{ item }">{{ item.role?.roleName || "—" }}</template>
-      <template #item.participantCost="{ item }">{{ formatParticipantCost(trip?.participantCost) }}</template>
+      <template #item.participantCost="{ item }">{{ rowParticipantCost(item) }}</template>
       <template #item.donationTotal="{ item }">{{ formatDonationTotal(item) }}</template>
       <template #item.whygoText="{ item }">{{ item.whygoText || "—" }}</template>
       <template #item.actions="{ item }">
+        <v-btn size="small" variant="text" @click="openEdit(item)">Edit</v-btn>
         <v-btn size="small" variant="text" @click="openDonations(item)">View donations</v-btn>
-        <v-btn size="small" variant="text" color="error" @click="removeParticipant(item)">Remove</v-btn>
       </template>
     </v-data-table>
 
@@ -256,6 +297,11 @@ onMounted(() => {
       v-model="showAddParticipant"
       :trip-id="selectedTripId"
       @saved="onParticipantAdded"
+    />
+    <EditTripParticipantDialog
+      v-model="showEditParticipant"
+      :participant="editParticipant"
+      @saved="onParticipantUpdated"
     />
     <ParticipantDonationsDialog
       v-if="selectedTripId"
