@@ -16,8 +16,16 @@ export default {
   delete(id) {
     return apiClient.delete(`/trips/${id}`);
   },
+  uploadImage(id, file) {
+    const form = new FormData();
+    form.append("image", file);
+    return apiClient.put(`/trips/${id}/image`, form);
+  },
   getImageUrl(image) {
     if (!image) return null;
-    return `${getBaseUrl()}uploads/${image}`;
+    // Legacy path: uploads/trips/...
+    if (String(image).startsWith("uploads/")) return `${getBaseUrl()}${image}`;
+    // Current path stored as trips/... served from /images/
+    return `${getBaseUrl()}images/${image}`;
   },
 };

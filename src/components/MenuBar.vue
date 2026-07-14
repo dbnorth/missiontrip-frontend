@@ -70,11 +70,11 @@ const showTripLeaderNav = computed(() =>
   (user.value?.tripRoles || []).some((r) => r.roleName === "Trip Leader")
 );
 
-const isTripLeaderOnly = computed(
-  () => showTripLeaderNav.value && !showOrgAdminNav.value && !user.value?.isAdmin
-);
-
-const tripPeopleNavLabel = computed(() => (isTripLeaderOnly.value ? "Trips" : "Participants"));
+const isTripLeaderOnly = computed(() => {
+  if (!user.value || user.value.isAdmin) return false;
+  const hasOrgAdmin = (user.value.orgRoles || []).some((r) => r.roleName === "Org Admin");
+  return showTripLeaderNav.value && !hasOrgAdmin;
+});
 
 const showParticipantNav = computed(() =>
   (user.value?.tripRoles || []).some((r) => r.roleName === "Trip Participant")
@@ -245,23 +245,33 @@ onMounted(() => {
     loadUserOrgItems();
   });
   window.addEventListener("user-logged-out", clearUserState);
-  window.addEventListener("organizations-updated", loadActingOrgs);
+  window.addEventListener("organizations-updated", () => {
+    loadActingOrgs();
+    resetMenu();
+  });
 });
 </script>
 
 <template>
   <v-app-bar v-if="user" color="primary" density="compact">
-    <v-app-bar-title class="d-flex align-center">
-      <v-avatar v-if="orgLogoUrl" size="32" class="mr-2">
+    <v-btn
+      icon
+      variant="text"
+      class="ml-1"
+      aria-label="Home"
+      :to="{ name: 'home' }"
+    >
+      <v-avatar v-if="orgLogoUrl" size="36" rounded="0">
         <v-img :src="orgLogoUrl" alt="Organization logo" />
       </v-avatar>
-      {{ orgName }}
-    </v-app-bar-title>
+      <v-icon v-else size="28">mdi-home</v-icon>
+    </v-btn>
+    <v-app-bar-title>{{ orgName }}</v-app-bar-title>
     <v-btn variant="text" :to="{ name: 'home' }">Dashboard</v-btn>
       <v-btn v-if="user.isAdmin || showOrgAdminNav" variant="text" :to="{ name: 'people' }">People</v-btn>
       <v-btn v-if="user.isAdmin" variant="text" :to="{ name: 'organizations' }">Organizations</v-btn>
       <v-btn v-if="showOrgAdminNav || user.isAdmin" variant="text" :to="{ name: 'trips' }">Trips</v-btn>
-      <v-btn v-if="showOrgAdminNav || showTripLeaderNav" variant="text" :to="{ name: 'tripPeople' }">{{ tripPeopleNavLabel }}</v-btn>
+      <v-btn v-if="isTripLeaderOnly" variant="text" :to="{ name: 'tripPeople' }">Trips</v-btn>
       <v-btn v-if="showOrgAdminNav || showTripLeaderNav || showParticipantNav" variant="text" :to="{ name: 'donations' }">Donations</v-btn>
       <v-btn v-if="user.isAdmin || showOrgAdminNav || showTripLeaderNav" variant="text" :to="{ name: 'templates' }">Templates</v-btn>
 

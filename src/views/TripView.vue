@@ -10,6 +10,8 @@ import ParticipantDonationsDialog from "../components/ParticipantDonationsDialog
 import EditTripDialog from "../components/EditTripDialog.vue";
 import { formatMoneyDisplay } from "../utils/moneyUtils.js";
 import { countryName } from "../utils/locationData.js";
+import { donorTripPath, donorParticipantPath } from "../utils/donateUrls.js";
+import PersonServices from "../services/personServices.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -27,7 +29,10 @@ const showEditTrip = ref(false);
 const showDonations = ref(false);
 const donationsParticipant = ref(null);
 
-const donorLink = computed(() => `/donate/trip/${tripId.value}`);
+const donorLink = computed(() => (trip.value ? donorTripPath(trip.value) : null));
+
+const participantDonorLink = (row) =>
+  trip.value && row?.person ? donorParticipantPath(trip.value, row.person) : null;
 
 const formatLeaders = computed(() => (trip.value?.leaderNames || []).join(", ") || "—");
 
@@ -48,6 +53,8 @@ const participantName = (row) => {
   const p = row.person;
   return p ? `${p.firstName || ""} ${p.lastName || ""}`.trim() : "—";
 };
+
+const participantPictureUrl = (row) => PersonServices.getPictureUrl(row?.person?.picture);
 
 const loadTrip = () =>
   TripServices.get(tripId.value).then((r) => {
@@ -199,7 +206,14 @@ onMounted(refresh);
       ]"
       density="compact"
     >
-      <template #item.name="{ item }">{{ participantName(item) }}</template>
+      <template #item.name="{ item }">
+        <div class="d-flex align-center ga-3 py-1">
+          <v-avatar size="36" rounded="lg" class="participant-thumb flex-shrink-0">
+            <v-img v-if="participantPictureUrl(item)" :src="participantPictureUrl(item)" :alt="participantName(item)" cover />
+          </v-avatar>
+          <span>{{ participantName(item) }}</span>
+        </div>
+      </template>
       <template #item.role="{ item }">{{ item.role?.roleName || "—" }}</template>
       <template #item.participantCost="{ item }">{{ rowParticipantCost(item) }}</template>
       <template #item.donationTotal="{ item }">{{ formatDonationTotal(item) }}</template>
@@ -207,6 +221,16 @@ onMounted(refresh);
       <template #item.actions="{ item }">
         <v-btn size="small" variant="text" @click="openEdit(item)">Edit</v-btn>
         <v-btn size="small" variant="text" @click="openDonations(item)">View donations</v-btn>
+        <v-btn
+          v-if="participantDonorLink(item)"
+          size="small"
+          variant="text"
+          :href="participantDonorLink(item)"
+          target="_blank"
+          rel="noopener"
+        >
+          Donate page
+        </v-btn>
       </template>
     </v-data-table>
 
@@ -229,3 +253,9 @@ onMounted(refresh);
     <EditTripDialog v-model="showEditTrip" :trip-id="tripId" @saved="onTripUpdated" />
   </v-container>
 </template>
+
+<style scoped>
+.participant-thumb {
+  background: rgba(0, 0, 0, 0.06);
+}
+</style>

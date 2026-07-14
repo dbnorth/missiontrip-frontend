@@ -24,11 +24,16 @@ const router = createRouter({
     { path: "/trip-people", name: "tripPeople", component: TripPeopleRolesList },
     { path: "/donations", name: "donations", component: DonationsList },
     { path: "/templates", name: "templates", component: EmailTemplatesList },
-    { path: "/donate/trip/:tripId", name: "donorTrip", component: DonorTripPage, props: true },
     {
-      path: "/donate/trip/:tripId/participant/:personId",
+      path: "/donate/trip/:tripSlug/participant/:personSlug",
       name: "donorParticipant",
       component: DonorParticipantPage,
+      props: true,
+    },
+    {
+      path: "/donate/trip/:tripSlug",
+      name: "donorTrip",
+      component: DonorTripPage,
       props: true,
     },
   ],

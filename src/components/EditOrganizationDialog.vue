@@ -1,5 +1,5 @@
 <script setup>
-import { ref, watch } from "vue";
+import { ref, watch, computed } from "vue";
 import OrganizationServices from "../services/organizationServices.js";
 import OrganizationFormFields from "./OrganizationFormFields.vue";
 import { emptyOrganizationForm, buildOrganizationPayload } from "../utils/organizationForm.js";
@@ -16,10 +16,27 @@ const emit = defineEmits(["update:modelValue", "saved"]);
 
 const loading = ref(false);
 const saving = ref(false);
+const logoFile = ref(null);
+const logoPreview = ref(null);
 const { formError, formNotice, prepareSave, onLoadStart, onLoadSuccess, handleSaveError } =
   useVersionConflictForm();
 
 const form = ref(emptyOrganizationForm());
+
+const currentLogoUrl = computed(() => OrganizationServices.getLogoUrl(form.value.logo));
+
+const clearLogoSelection = () => {
+  if (logoPreview.value) URL.revokeObjectURL(logoPreview.value);
+  logoFile.value = null;
+  logoPreview.value = null;
+};
+
+const onLogoSelected = (files) => {
+  const file = Array.isArray(files) ? files[0] : files;
+  if (logoPreview.value) URL.revokeObjectURL(logoPreview.value);
+  logoFile.value = file || null;
+  logoPreview.value = file ? URL.createObjectURL(file) : null;
+};
 
 const applyOrgData = (data) => {
   const normalized = normalizeAddressFields(data || {});
@@ -30,6 +47,7 @@ const applyOrgData = (data) => {
     phoneNumber: formatPhoneForDisplay(data.phoneNumber),
     phoneContryCode: data.phoneContryCode ? formatCountryCode(data.phoneContryCode) : "",
   };
+  clearLogoSelection();
 };
 
 const loadOrganization = async ({ afterConflict = false } = {}) => {
@@ -51,12 +69,16 @@ watch(
   () => [props.modelValue, props.organizationId],
   ([open, id]) => {
     if (open && id) loadOrganization();
+    if (!open) clearLogoSelection();
   }
 );
 
-const close = () => emit("update:modelValue", false);
+const close = () => {
+  clearLogoSelection();
+  emit("update:modelValue", false);
+};
 
-const save = () => {
+const save = async () => {
   if (!form.value.name?.trim()) {
     formError.value = "Organization name is required.";
     return;
@@ -79,17 +101,18 @@ const save = () => {
     { includeVersion: true }
   );
 
-  OrganizationServices.update(form.value.id, payload)
-    .then(() => {
-      emit("saved");
-      close();
-    })
-    .catch(async (e) => {
-      await handleSaveError(e, loadOrganization, "Error saving organization.");
-    })
-    .finally(() => {
-      saving.value = false;
-    });
+  try {
+    await OrganizationServices.update(form.value.id, payload);
+    if (logoFile.value) {
+      await OrganizationServices.uploadLogo(form.value.id, logoFile.value);
+    }
+    emit("saved");
+    close();
+  } catch (e) {
+    await handleSaveError(e, loadOrganization, "Error saving organization.");
+  } finally {
+    saving.value = false;
+  }
 };
 </script>
 
@@ -103,6 +126,26 @@ const save = () => {
 
         <template v-if="!loading">
           <OrganizationFormFields v-model="form" />
+
+          <div class="mt-2 mb-2">
+            <div class="text-subtitle-2 mb-2">Logo</div>
+            <div class="d-flex align-center ga-3 mb-2">
+              <v-avatar v-if="logoPreview || currentLogoUrl" size="56" rounded="0">
+                <v-img :src="logoPreview || currentLogoUrl" alt="Organization logo" />
+              </v-avatar>
+              <span v-else class="text-caption text-medium-emphasis">No logo uploaded</span>
+            </div>
+            <v-file-input
+              label="Upload logo"
+              accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+              density="compact"
+              prepend-icon="mdi-camera"
+              show-size
+              clearable
+              hide-details
+              @update:model-value="onLogoSelected"
+            />
+          </div>
         </template>
 
         <v-alert v-if="formNotice" type="warning" density="compact" class="mt-2">{{ formNotice }}</v-alert>

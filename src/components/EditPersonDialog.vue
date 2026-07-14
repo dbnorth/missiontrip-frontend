@@ -37,12 +37,29 @@ const form = ref(emptyForm());
 const currentPassword = ref("");
 const newPassword = ref("");
 const confirmPassword = ref("");
+const pictureFile = ref(null);
+const picturePreview = ref(null);
 
 const resetPasswordFields = () => {
   currentPassword.value = "";
   newPassword.value = "";
   confirmPassword.value = "";
 };
+
+const clearPictureSelection = () => {
+  if (picturePreview.value) URL.revokeObjectURL(picturePreview.value);
+  pictureFile.value = null;
+  picturePreview.value = null;
+};
+
+const onPictureSelected = (files) => {
+  const file = Array.isArray(files) ? files[0] : files;
+  if (picturePreview.value) URL.revokeObjectURL(picturePreview.value);
+  pictureFile.value = file || null;
+  picturePreview.value = file ? URL.createObjectURL(file) : null;
+};
+
+const currentPictureUrl = computed(() => PersonServices.getPictureUrl(form.value.picture));
 
 function emptyForm() {
   return {
@@ -60,6 +77,7 @@ function emptyForm() {
     phoneContryCode: "",
     phoneNumber: "",
     bioText: "",
+    picture: null,
     isAdmin: false,
     version: 0,
   };
@@ -103,6 +121,7 @@ const applyPersonData = (data) => {
     phoneNumber: formatPhoneForDisplay(data.phoneNumber),
     phoneContryCode: data.phoneContryCode ? formatCountryCode(data.phoneContryCode) : "",
   };
+  clearPictureSelection();
 };
 
 const loadOrgRoleOptions = async () => {
@@ -229,11 +248,16 @@ watch(
       resetPasswordFields();
       loadPerson();
     }
+    if (!open) {
+      resetPasswordFields();
+      clearPictureSelection();
+    }
   }
 );
 
 const close = () => {
   resetPasswordFields();
+  clearPictureSelection();
   emit("update:modelValue", false);
 };
 
@@ -332,7 +356,11 @@ const save = async () => {
     }
 
     await PersonServices.update(form.value.id, payload);
+    if (pictureFile.value) {
+      await PersonServices.uploadPicture(form.value.id, pictureFile.value);
+    }
     resetPasswordFields();
+    clearPictureSelection();
     emit("saved");
     close();
   } catch (e) {
@@ -428,6 +456,26 @@ const save = async () => {
             </v-col>
           </v-row>
           <v-textarea v-model="form.bioText" label="Bio" density="compact" rows="3" autocomplete="off" />
+
+          <div class="mt-2 mb-2">
+            <div class="text-subtitle-2 mb-2">Profile photo</div>
+            <div class="d-flex align-center ga-3 mb-2">
+              <v-avatar v-if="picturePreview || currentPictureUrl" size="72" rounded="lg">
+                <v-img :src="picturePreview || currentPictureUrl" alt="Profile photo" cover />
+              </v-avatar>
+              <span v-else class="text-caption text-medium-emphasis">No photo uploaded</span>
+            </div>
+            <v-file-input
+              label="Upload profile photo"
+              accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+              density="compact"
+              prepend-icon="mdi-camera"
+              show-size
+              clearable
+              hide-details
+              @update:model-value="onPictureSelected"
+            />
+          </div>
           </v-form>
 
           <template v-if="isSystemAdmin">

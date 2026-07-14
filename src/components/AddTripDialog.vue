@@ -21,6 +21,8 @@ const user = ref(null);
 const organizations = ref([]);
 const formError = ref("");
 const saving = ref(false);
+const imageFile = ref(null);
+const imagePreview = ref(null);
 
 const emptyForm = () => ({
   name: "",
@@ -63,6 +65,19 @@ const selectedOrgAdminOrg = computed(() =>
   orgAdminOrgs.value.find((r) => Number(r.orgId) === Number(form.value.orgId))
 );
 
+const clearImageSelection = () => {
+  if (imagePreview.value) URL.revokeObjectURL(imagePreview.value);
+  imageFile.value = null;
+  imagePreview.value = null;
+};
+
+const onImageSelected = (files) => {
+  const file = Array.isArray(files) ? files[0] : files;
+  if (imagePreview.value) URL.revokeObjectURL(imagePreview.value);
+  imageFile.value = file || null;
+  imagePreview.value = file ? URL.createObjectURL(file) : null;
+};
+
 const resetForm = () => {
   user.value = Utils.getStore("user");
   const defaultOrgId = isSystemAdmin.value
@@ -71,6 +86,7 @@ const resetForm = () => {
 
   form.value = { ...emptyForm(), orgId: defaultOrgId };
   formError.value = "";
+  clearImageSelection();
   resetLeaders();
   if (defaultOrgId) loadLeaderOptions(defaultOrgId);
 };
@@ -98,9 +114,12 @@ watch(
   }
 );
 
-const close = () => emit("update:modelValue", false);
+const close = () => {
+  clearImageSelection();
+  emit("update:modelValue", false);
+};
 
-const save = () => {
+const save = async () => {
   if (!form.value.name?.trim()) {
     formError.value = "Trip name is required.";
     return;
@@ -129,17 +148,19 @@ const save = () => {
     leaderPeopleIds: leaderPeopleIds.value,
   };
 
-  TripServices.create(payload)
-    .then(() => {
-      emit("saved");
-      close();
-    })
-    .catch((e) => {
-      formError.value = e.response?.data?.message || "Error saving trip.";
-    })
-    .finally(() => {
-      saving.value = false;
-    });
+  try {
+    const res = await TripServices.create(payload);
+    const trip = res.data;
+    if (imageFile.value && trip?.id) {
+      await TripServices.uploadImage(trip.id, imageFile.value);
+    }
+    emit("saved");
+    close();
+  } catch (e) {
+    formError.value = e.response?.data?.message || "Error saving trip.";
+  } finally {
+    saving.value = false;
+  }
 };
 </script>
 
@@ -221,6 +242,31 @@ const save = () => {
           density="compact"
           autocomplete="off"
         />
+
+        <div class="mt-2 mb-2">
+          <div class="text-subtitle-2 mb-2">Trip image</div>
+          <div class="d-flex align-center ga-3 mb-2">
+            <v-img
+              v-if="imagePreview"
+              :src="imagePreview"
+              alt="Trip image preview"
+              max-width="160"
+              max-height="100"
+              cover
+            />
+            <span v-else class="text-caption text-medium-emphasis">Optional</span>
+          </div>
+          <v-file-input
+            label="Upload trip image"
+            accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+            density="compact"
+            prepend-icon="mdi-camera"
+            show-size
+            clearable
+            hide-details
+            @update:model-value="onImageSelected"
+          />
+        </div>
 
         <v-autocomplete
           v-model="leaderPeopleIds"

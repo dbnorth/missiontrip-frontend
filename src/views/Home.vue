@@ -264,7 +264,7 @@ onUnmounted(() => {
               { title: 'Leaders', key: 'leaders' },
               { title: 'Start date', key: 'startDate' },
               { title: 'End date', key: 'endDate' },
-              { title: 'Active participants', key: 'activeParticipantCount' },
+              { title: 'Active members', key: 'activeParticipantCount' },
             ]"
             density="compact"
           >

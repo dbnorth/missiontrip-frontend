@@ -22,12 +22,15 @@ export default {
   uploadLogo(id, file) {
     const form = new FormData();
     form.append("logo", file);
-    return apiClient.put(`/organizations/${id}/logo`, form, {
-      headers: { "Content-Type": "multipart/form-data" },
-    });
+    return apiClient.put(`/organizations/${id}/logo`, form);
   },
   getLogoUrl(logo) {
     if (!logo) return null;
-    return `${getBaseUrl()}uploads/${logo}`;
+    // Legacy path: uploads/org-logos/...
+    if (String(logo).startsWith("org-logos/")) {
+      return `${getBaseUrl()}uploads/${logo}`;
+    }
+    // New path: images/logos/...
+    return `${getBaseUrl()}images/${logo}`;
   },
 };

@@ -24,6 +24,7 @@ const onOrganizationAdded = () => {
 const onOrganizationUpdated = () => {
   message.value = "Organization updated.";
   load();
+  window.dispatchEvent(new CustomEvent("organizations-updated"));
 };
 
 const openEdit = (org) => {
