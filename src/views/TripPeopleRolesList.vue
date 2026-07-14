@@ -10,6 +10,7 @@ import EditTripDialog from "../components/EditTripDialog.vue";
 import Utils from "../config/utils.js";
 import { formatMoneyDisplay } from "../utils/moneyUtils.js";
 import { countryName } from "../utils/locationData.js";
+import { donorTripPath } from "../utils/donateUrls.js";
 
 const route = useRoute();
 const user = ref(null);
@@ -48,9 +49,7 @@ const pageTitle = computed(() => (isTripLeaderOnly.value ? "Trips" : "Participan
 
 const tripItems = computed(() => trips.value.map((t) => ({ title: t.name, value: t.id })));
 
-const donorLink = computed(() =>
-  selectedTripId.value ? `/donate/trip/${selectedTripId.value}` : null
-);
+const donorLink = computed(() => (trip.value ? donorTripPath(trip.value) : null));
 
 const formatLeaders = computed(() => (trip.value?.leaderNames || []).join(", ") || "—");
 

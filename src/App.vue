@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, onUnmounted } from "vue";
+import { ref, computed, onMounted, onUnmounted } from "vue";
 import { useRoute } from "vue-router";
 import { useTheme } from "vuetify";
 import MenuBar from "./components/MenuBar.vue";
@@ -9,6 +9,10 @@ import { resolveOrgColor } from "./plugins/vuetify.js";
 
 const theme = useTheme();
 const route = useRoute();
+
+const hideMenuBar = computed(() =>
+  ["donorTrip", "donorParticipant", "login"].includes(route.name)
+);
 
 const orgScopeKey = () => {
   const user = Utils.getStore("user");
@@ -62,7 +66,7 @@ onUnmounted(() => {
 
 <template>
   <v-app>
-    <MenuBar />
+    <MenuBar v-if="!hideMenuBar" />
     <v-main>
       <router-view :key="`${route.fullPath}:${viewKey}`" />
     </v-main>

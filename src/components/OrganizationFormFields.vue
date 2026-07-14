@@ -28,6 +28,12 @@ defineProps({
     </v-col>
   </v-row>
   <v-text-field
+    v-model="modelValue.websiteUrl"
+    label="Website URL"
+    density="compact"
+    autocomplete="off"
+  />
+  <v-text-field
     v-model="modelValue.facebookPage"
     label="Facebook page URL"
     density="compact"

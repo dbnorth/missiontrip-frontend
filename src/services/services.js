@@ -34,7 +34,9 @@ apiClient.interceptors.request.use((config) => {
       config.headers["X-Acting-Organization-Id"] = String(orgId);
     }
   }
-  if (config.data && typeof config.data !== "string" && !(config.data instanceof FormData)) {
+  if (config.data instanceof FormData) {
+    delete config.headers["Content-Type"];
+  } else if (config.data && typeof config.data !== "string") {
     config.data = JSON.stringify(config.data);
   }
   return config;

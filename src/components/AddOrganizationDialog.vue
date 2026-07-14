@@ -13,11 +13,27 @@ const emit = defineEmits(["update:modelValue", "saved"]);
 
 const formError = ref("");
 const saving = ref(false);
+const logoFile = ref(null);
+const logoPreview = ref(null);
 const form = ref(emptyOrganizationForm());
+
+const clearLogoSelection = () => {
+  if (logoPreview.value) URL.revokeObjectURL(logoPreview.value);
+  logoFile.value = null;
+  logoPreview.value = null;
+};
+
+const onLogoSelected = (files) => {
+  const file = Array.isArray(files) ? files[0] : files;
+  if (logoPreview.value) URL.revokeObjectURL(logoPreview.value);
+  logoFile.value = file || null;
+  logoPreview.value = file ? URL.createObjectURL(file) : null;
+};
 
 const resetForm = () => {
   form.value = emptyOrganizationForm();
   formError.value = "";
+  clearLogoSelection();
 };
 
 watch(
@@ -27,9 +43,12 @@ watch(
   }
 );
 
-const close = () => emit("update:modelValue", false);
+const close = () => {
+  clearLogoSelection();
+  emit("update:modelValue", false);
+};
 
-const save = () => {
+const save = async () => {
   if (!form.value.name?.trim()) {
     formError.value = "Organization name is required.";
     return;
@@ -49,17 +68,19 @@ const save = () => {
     phoneContryCode: form.value.phoneContryCode ? formatCountryCode(form.value.phoneContryCode) : "",
   });
 
-  OrganizationServices.create(payload)
-    .then((res) => {
-      emit("saved", res.data);
-      close();
-    })
-    .catch((e) => {
-      formError.value = e.response?.data?.message || "Error saving organization.";
-    })
-    .finally(() => {
-      saving.value = false;
-    });
+  try {
+    const res = await OrganizationServices.create(payload);
+    const org = res.data;
+    if (logoFile.value && org?.id) {
+      await OrganizationServices.uploadLogo(org.id, logoFile.value);
+    }
+    emit("saved", org);
+    close();
+  } catch (e) {
+    formError.value = e.response?.data?.message || "Error saving organization.";
+  } finally {
+    saving.value = false;
+  }
 };
 </script>
 
@@ -70,6 +91,27 @@ const save = () => {
 
       <v-card-text style="max-height: 70vh">
         <OrganizationFormFields v-model="form" />
+
+        <div class="mt-2 mb-2">
+          <div class="text-subtitle-2 mb-2">Logo</div>
+          <div class="d-flex align-center ga-3 mb-2">
+            <v-avatar v-if="logoPreview" size="56" rounded="0">
+              <v-img :src="logoPreview" alt="Organization logo preview" />
+            </v-avatar>
+            <span v-else class="text-caption text-medium-emphasis">Optional — upload after name is set</span>
+          </div>
+          <v-file-input
+            label="Upload logo"
+            accept="image/png,image/jpeg,image/jpg,image/gif,image/webp"
+            density="compact"
+            prepend-icon="mdi-camera"
+            show-size
+            clearable
+            hide-details
+            @update:model-value="onLogoSelected"
+          />
+        </div>
+
         <v-alert v-if="formError" type="error" density="compact" class="mt-2">{{ formError }}</v-alert>
       </v-card-text>
 

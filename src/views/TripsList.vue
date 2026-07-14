@@ -7,6 +7,7 @@ import AddTripDialog from "../components/AddTripDialog.vue";
 import EditTripDialog from "../components/EditTripDialog.vue";
 import Utils from "../config/utils.js";
 import { formatMoneyDisplay } from "../utils/moneyUtils.js";
+import { donorTripPath } from "../utils/donateUrls.js";
 
 const router = useRouter();
 const trips = ref([]);
@@ -86,12 +87,12 @@ const openView = (trip) => {
   router.push({ name: "tripView", params: { tripId: trip.id } });
 };
 
-const donorLink = (tripId) => `/donate/trip/${tripId}`;
+const donorLink = (trip) => donorTripPath(trip);
 
 const formatLeaders = (trip) => (trip.leaderNames || []).join(", ") || "—";
 
-const formatParticipantCost = (trip) =>
-  trip.participantCost != null ? formatMoneyDisplay(trip.participantCost) : "—";
+const formatMoney = (value) =>
+  value != null && value !== "" ? formatMoneyDisplay(value) : "—";
 
 const onUserUpdated = async () => {
   user.value = Utils.getStore("user");
@@ -132,7 +133,9 @@ onUnmounted(() => {
       :headers="[
         { title: 'Name', key: 'name' },
         { title: 'Leaders', key: 'leaders' },
-        { title: 'Participant cost', key: 'participantCost' },
+        { title: 'Active members', key: 'activeParticipantCount' },
+        { title: 'Total cost', key: 'totalParticipantCost' },
+        { title: 'Total donations', key: 'donationTotal' },
         { title: 'Status', key: 'status' },
         { title: 'Dates', key: 'dates' },
         { title: 'Donor link', key: 'link' },
@@ -141,10 +144,12 @@ onUnmounted(() => {
       density="compact"
     >
       <template #item.leaders="{ item }">{{ formatLeaders(item) }}</template>
-      <template #item.participantCost="{ item }">{{ formatParticipantCost(item) }}</template>
+      <template #item.activeParticipantCount="{ item }">{{ item.activeParticipantCount ?? 0 }}</template>
+      <template #item.totalParticipantCost="{ item }">{{ formatMoney(item.totalParticipantCost) }}</template>
+      <template #item.donationTotal="{ item }">{{ formatMoney(item.donationTotal) }}</template>
       <template #item.dates="{ item }">{{ item.startDate }} – {{ item.endDate }}</template>
       <template #item.link="{ item }">
-        <a :href="donorLink(item.id)" target="_blank">Donate</a>
+        <a :href="donorLink(item)" target="_blank">Donate</a>
       </template>
       <template #item.actions="{ item }">
         <v-btn size="small" variant="text" @click="openView(item)">View</v-btn>
