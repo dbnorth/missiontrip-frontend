@@ -8,6 +8,8 @@ import OrgPeopleRoleServices from "../services/orgPeopleRoleServices.js";
 import PhoneInput from "./PhoneInput.vue";
 import PhoneCountryCodeInput from "./PhoneCountryCodeInput.vue";
 import AddressFields from "./AddressFields.vue";
+import PersonProfileFields from "./PersonProfileFields.vue";
+import PersonDocumentsCard from "./PersonDocumentsCard.vue";
 import Utils from "../config/utils.js";
 import { formatPhoneForDisplay, formatCountryCode, validatePhoneFields } from "../utils/phoneUtils.js";
 import { normalizeAddressFields } from "../utils/locationData.js";
@@ -76,6 +78,17 @@ function emptyForm() {
     postalCode: "",
     phoneContryCode: "",
     phoneNumber: "",
+    birthDate: "",
+    gender: null,
+    emergencyContactName: "",
+    emergencyContactPhoneCountryCode: "",
+    emergencyContactPhoneNumber: "",
+    hasAllergies: false,
+    allergiesDescription: "",
+    takesMedication: false,
+    currentChurchHome: "",
+    currentChurchHomeCity: "",
+    currentChurchHomeStateProv: "",
     bioText: "",
     picture: null,
     isAdmin: false,
@@ -120,6 +133,10 @@ const applyPersonData = (data) => {
     isAdmin: !!(data.isAdmin === true || data.isAdmin === 1),
     phoneNumber: formatPhoneForDisplay(data.phoneNumber),
     phoneContryCode: data.phoneContryCode ? formatCountryCode(data.phoneContryCode) : "",
+    emergencyContactPhoneNumber: formatPhoneForDisplay(data.emergencyContactPhoneNumber),
+    emergencyContactPhoneCountryCode: data.emergencyContactPhoneCountryCode
+      ? formatCountryCode(data.emergencyContactPhoneCountryCode)
+      : "",
   };
   clearPictureSelection();
 };
@@ -317,6 +334,14 @@ const save = async () => {
     formError.value = phoneValidation;
     return;
   }
+  const emergencyPhoneValidation = validatePhoneFields(
+    form.value.emergencyContactPhoneCountryCode,
+    form.value.emergencyContactPhoneNumber
+  );
+  if (emergencyPhoneValidation !== true) {
+    formError.value = `Emergency contact: ${emergencyPhoneValidation}`;
+    return;
+  }
   if (!validatePasswordChange()) return;
 
   saving.value = true;
@@ -344,6 +369,21 @@ const save = async () => {
       postalCode: form.value.postalCode?.trim() || null,
       phoneContryCode: form.value.phoneContryCode ? formatCountryCode(form.value.phoneContryCode) : null,
       phoneNumber: form.value.phoneNumber?.trim() || null,
+      birthDate: form.value.birthDate || null,
+      gender: form.value.gender || null,
+      emergencyContactName: form.value.emergencyContactName?.trim() || null,
+      emergencyContactPhoneCountryCode: form.value.emergencyContactPhoneCountryCode
+        ? formatCountryCode(form.value.emergencyContactPhoneCountryCode)
+        : null,
+      emergencyContactPhoneNumber: form.value.emergencyContactPhoneNumber?.trim() || null,
+      hasAllergies: !!form.value.hasAllergies,
+      allergiesDescription: form.value.hasAllergies
+        ? form.value.allergiesDescription?.trim() || null
+        : null,
+      takesMedication: !!form.value.takesMedication,
+      currentChurchHome: form.value.currentChurchHome?.trim() || null,
+      currentChurchHomeCity: form.value.currentChurchHomeCity?.trim() || null,
+      currentChurchHomeStateProv: form.value.currentChurchHomeStateProv?.trim() || null,
       bioText: form.value.bioText?.trim() || null,
       version: form.value.version,
     };
@@ -372,7 +412,7 @@ const save = async () => {
 </script>
 
 <template>
-  <v-dialog :model-value="modelValue" max-width="560" scrollable @update:model-value="(v) => !v && close()">
+  <v-dialog :model-value="modelValue" max-width="700" scrollable @update:model-value="(v) => !v && close()">
     <v-card>
       <v-card-title>{{ dialogTitle }}</v-card-title>
 
@@ -455,6 +495,7 @@ const save = async () => {
               <PhoneInput v-model="form.phoneNumber" label="Phone number" />
             </v-col>
           </v-row>
+          <PersonProfileFields v-model="form" />
           <v-textarea v-model="form.bioText" label="Bio" density="compact" rows="3" autocomplete="off" />
 
           <div class="mt-2 mb-2">
@@ -476,6 +517,7 @@ const save = async () => {
               @update:model-value="onPictureSelected"
             />
           </div>
+          <PersonDocumentsCard v-if="form.id" :person-id="form.id" />
           </v-form>
 
           <template v-if="isSystemAdmin">
@@ -511,41 +553,43 @@ const save = async () => {
             </v-table>
             <div v-else class="text-body-2 text-medium-emphasis mb-3">No organization assignments.</div>
 
-            <v-select
-              v-model="newOrgRole.orgId"
-              :items="organizations"
-              item-title="name"
-              item-value="id"
-              label="Organization"
-              density="compact"
-              :disabled="orgRoleBusy || !organizations.length"
-              hide-details
-              class="mb-2"
-            />
-            <v-select
-              v-model="newOrgRole.roleId"
-              :items="roles"
-              item-title="roleName"
-              item-value="id"
-              label="Role"
-              density="compact"
-              :disabled="orgRoleBusy"
-              hide-details
-              class="mb-2"
-            />
-            <v-btn
-              type="button"
-              size="small"
-              variant="tonal"
-              color="primary"
-              :loading="orgRoleBusy"
-              :disabled="!organizations.length"
-              @click="addOrgRole"
-            >
-              Add role
-            </v-btn>
-            <div class="text-caption text-medium-emphasis mt-1">
-              A person can have multiple roles for the same organization. Assignments save when you click Add role, or when you click Save with an organization and role selected above.
+            <div class="add-role-form pa-4 rounded mb-2">
+              <div class="text-subtitle-2 mb-3">Add Role</div>
+              <v-select
+                v-model="newOrgRole.orgId"
+                :items="organizations"
+                item-title="name"
+                item-value="id"
+                label="Organization"
+                density="compact"
+                :disabled="orgRoleBusy || !organizations.length"
+                hide-details
+                class="mb-2"
+              />
+              <v-select
+                v-model="newOrgRole.roleId"
+                :items="roles"
+                item-title="roleName"
+                item-value="id"
+                label="Role"
+                density="compact"
+                :disabled="orgRoleBusy"
+                hide-details
+                class="mb-2"
+              />
+              <v-btn
+                type="button"
+                color="primary"
+                size="small"
+                :loading="orgRoleBusy"
+                :disabled="!organizations.length"
+                @click="addOrgRole"
+              >
+                Add role
+              </v-btn>
+              <div class="text-caption text-medium-emphasis mt-2">
+                A person can have multiple roles for the same organization. Assignments save when you click Add role, or when you click Save with an organization and role selected above.
+              </div>
             </div>
             <v-alert v-if="orgRoleSuccess" type="success" density="compact" class="mt-2">{{ orgRoleSuccess }}</v-alert>
             <v-alert v-if="orgRoleError" type="error" density="compact" class="mt-2">{{ orgRoleError }}</v-alert>
@@ -564,3 +608,9 @@ const save = async () => {
     </v-card>
   </v-dialog>
 </template>
+
+<style scoped>
+.add-role-form {
+  background-color: #f0f0f0;
+}
+</style>

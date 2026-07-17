@@ -80,10 +80,11 @@ const showParticipantNav = computed(() =>
   (user.value?.tripRoles || []).some((r) => r.roleName === "Trip Participant")
 );
 
+const showProfileNav = computed(() => Utils.showParticipantOrPendingProfile(user.value));
+
 const showUserOrgSelector = computed(() => {
-  if (user.value?.isAdmin) return false;
-  if (!showOrgAdminNav.value && !showTripLeaderNav.value) return false;
-  return userOrgItems.value.length > 1;
+  if (!user.value || user.value.isAdmin) return false;
+  return userOrgItems.value.length > 0;
 });
 
 const userDisplayName = computed(() => {
@@ -153,47 +154,69 @@ const loadUserOrgItems = async () => {
     userOrgItems.value = [];
     return;
   }
-  const orgs = Utils.getSelectableOrgs(user.value);
-  const items = await Promise.all(
-    orgs.map(async (org) => {
-      if (org.orgName) {
-        return { name: org.orgName, id: Number(org.orgId) };
-      }
-      try {
-        const res = await OrganizationServices.get(org.orgId);
-        return { name: res.data?.name || `Organization ${org.orgId}`, id: Number(org.orgId) };
-      } catch {
-        return { name: `Organization ${org.orgId}`, id: Number(org.orgId) };
-      }
-    })
-  );
-  userOrgItems.value = items;
 
-  const namesById = new Map(items.map((item) => [item.id, item.name]));
-  const stored = Utils.getStore("user");
-  if (!stored) return;
+  try {
+    const res = await OrganizationServices.getAllForMenu();
+    const items = (res.data || [])
+      .map((org) => ({ name: org.name, id: Number(org.id) }))
+      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
+    userOrgItems.value = items;
 
-  let changed = false;
-  const tripRoles = (stored.tripRoles || []).map((role) => {
-    const name = namesById.get(Number(role.orgId));
-    if (name && role.orgName !== name) {
-      changed = true;
-      return { ...role, orgName: name };
+    const stored = Utils.getStore("user");
+    if (!stored) return;
+
+    const roleOrgs = Utils.getRoleOrgs(stored);
+    const defaultOrgId = roleOrgs[0]?.orgId ?? null;
+    const currentIsValid =
+      stored.currentOrgId != null &&
+      items.some((item) => Number(item.id) === Number(stored.currentOrgId));
+
+    let nextOrgId = currentIsValid ? Number(stored.currentOrgId) : defaultOrgId;
+    if (nextOrgId == null && items.length) nextOrgId = items[0].id;
+
+    const selected = items.find((item) => Number(item.id) === Number(nextOrgId));
+    const nextName = selected?.name || roleOrgs.find((o) => Number(o.orgId) === Number(nextOrgId))?.orgName || null;
+
+    if (
+      Number(stored.currentOrgId) !== Number(nextOrgId) ||
+      stored.currentOrgName !== nextName
+    ) {
+      const updated = {
+        ...stored,
+        currentOrgId: nextOrgId,
+        currentOrgName: nextName,
+      };
+      Utils.setStore("user", updated);
+      user.value = updated;
+      window.dispatchEvent(new CustomEvent("user-updated"));
     }
-    return role;
-  });
-  const orgRoles = (stored.orgRoles || []).map((role) => {
-    const name = namesById.get(Number(role.orgId));
-    if (name && role.orgName !== name) {
-      changed = true;
-      return { ...role, orgName: name };
+
+    const namesById = new Map(items.map((item) => [item.id, item.name]));
+    let changed = false;
+    const tripRoles = (stored.tripRoles || []).map((role) => {
+      const name = namesById.get(Number(role.orgId));
+      if (name && role.orgName !== name) {
+        changed = true;
+        return { ...role, orgName: name };
+      }
+      return role;
+    });
+    const orgRoles = (stored.orgRoles || []).map((role) => {
+      const name = namesById.get(Number(role.orgId));
+      if (name && role.orgName !== name) {
+        changed = true;
+        return { ...role, orgName: name };
+      }
+      return role;
+    });
+    if (changed) {
+      const latest = Utils.getStore("user") || stored;
+      const updated = { ...latest, tripRoles, orgRoles };
+      Utils.setStore("user", updated);
+      user.value = updated;
     }
-    return role;
-  });
-  if (changed) {
-    const updated = { ...stored, tripRoles, orgRoles };
-    Utils.setStore("user", updated);
-    user.value = updated;
+  } catch {
+    userOrgItems.value = [];
   }
 };
 
@@ -268,12 +291,15 @@ onMounted(() => {
     </v-btn>
     <v-app-bar-title>{{ orgName }}</v-app-bar-title>
     <v-btn variant="text" :to="{ name: 'home' }">Dashboard</v-btn>
+      <v-btn v-if="showProfileNav" variant="text" @click="openProfile">Profile</v-btn>
       <v-btn v-if="user.isAdmin || showOrgAdminNav" variant="text" :to="{ name: 'people' }">People</v-btn>
       <v-btn v-if="user.isAdmin" variant="text" :to="{ name: 'organizations' }">Organizations</v-btn>
+      <v-btn v-if="user.isAdmin" variant="text" :to="{ name: 'documentTypes' }">Document types</v-btn>
       <v-btn v-if="showOrgAdminNav || user.isAdmin" variant="text" :to="{ name: 'trips' }">Trips</v-btn>
       <v-btn v-if="isTripLeaderOnly" variant="text" :to="{ name: 'tripPeople' }">Trips</v-btn>
       <v-btn v-if="showOrgAdminNav || showTripLeaderNav || showParticipantNav" variant="text" :to="{ name: 'donations' }">Donations</v-btn>
       <v-btn v-if="user.isAdmin || showOrgAdminNav || showTripLeaderNav" variant="text" :to="{ name: 'templates' }">Templates</v-btn>
+      <v-btn v-if="user.isAdmin || showOrgAdminNav" variant="text" :to="{ name: 'workerRoles' }">Worker roles</v-btn>
 
       <v-select
         v-if="showUserOrgSelector"

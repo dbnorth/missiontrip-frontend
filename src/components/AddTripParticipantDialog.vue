@@ -4,6 +4,7 @@ import PersonServices from "../services/personServices.js";
 import RoleServices from "../services/roleServices.js";
 import TripServices from "../services/tripServices.js";
 import TripPeopleRoleServices from "../services/tripPeopleRoleServices.js";
+import TripWorkerRoleServices from "../services/tripWorkerRoleServices.js";
 import MoneyInput from "./MoneyInput.vue";
 import { formatMoneyDisplay, parseMoneyAmount } from "../utils/moneyUtils.js";
 
@@ -16,12 +17,14 @@ const emit = defineEmits(["update:modelValue", "saved"]);
 
 const people = ref([]);
 const roles = ref([]);
+const tripWorkerRoles = ref([]);
 const tripDefaultCost = ref(null);
 const saving = ref(false);
 const formError = ref("");
 const form = ref({
   peopleId: null,
   roleId: null,
+  tripWorkerRoleId: null,
   status: "active",
   participantCost: "",
   whygoText: "",
@@ -29,22 +32,31 @@ const form = ref({
 
 const personLabel = (p) => `${p.firstName || ""} ${p.lastName || ""}`.trim();
 
+const tripWorkerRoleLabel = (row) => {
+  const name = row.workerRole?.name || "Worker role";
+  const qty = row.quantity != null ? ` (need ${row.quantity})` : "";
+  return `${name}${qty}`;
+};
+
 const loadOptions = async () => {
-  const [peopleRes, rolesRes, tripRes, existingRes] = await Promise.all([
+  const [peopleRes, rolesRes, tripRes, existingRes, twrRes] = await Promise.all([
     PersonServices.getAll(),
     RoleServices.getAll(),
     TripServices.get(props.tripId),
     TripPeopleRoleServices.getAll(props.tripId),
+    TripWorkerRoleServices.getAll(props.tripId),
   ]);
   const existingPeopleIds = new Set((existingRes.data || []).map((r) => Number(r.peopleId)));
   people.value = (peopleRes.data || []).filter((p) => !existingPeopleIds.has(Number(p.id)));
   roles.value = (rolesRes.data || []).filter((r) => r.roleName !== "Org Admin");
+  tripWorkerRoles.value = twrRes.data || [];
   const participantRole = roles.value.find((r) => r.roleName === "Trip Participant");
   const trip = tripRes.data;
   tripDefaultCost.value = trip?.participantCost ?? null;
   form.value = {
     peopleId: null,
     roleId: participantRole?.id ?? roles.value[0]?.id ?? null,
+    tripWorkerRoleId: null,
     status: "active",
     participantCost: "",
     whygoText: "",
@@ -77,6 +89,7 @@ const save = () => {
     tripId: Number(props.tripId),
     peopleId: Number(form.value.peopleId),
     roleId: Number(form.value.roleId),
+    tripWorkerRoleId: form.value.tripWorkerRoleId ? Number(form.value.tripWorkerRoleId) : null,
     status: form.value.status,
     whygoText: form.value.whygoText?.trim() || null,
   };
@@ -117,6 +130,17 @@ const save = () => {
           item-value="id"
           label="Role"
           density="compact"
+        />
+        <v-select
+          v-model="form.tripWorkerRoleId"
+          :items="tripWorkerRoles"
+          :item-title="tripWorkerRoleLabel"
+          item-value="id"
+          label="Trip worker role"
+          density="compact"
+          clearable
+          :hint="tripWorkerRoles.length ? undefined : 'Add roles under Team roles needed first'"
+          :persistent-hint="!tripWorkerRoles.length"
         />
         <v-select
           v-model="form.status"

@@ -6,6 +6,7 @@ import RoleServices from "../services/roleServices.js";
 import PhoneInput from "./PhoneInput.vue";
 import PhoneCountryCodeInput from "./PhoneCountryCodeInput.vue";
 import AddressFields from "./AddressFields.vue";
+import PersonProfileFields from "./PersonProfileFields.vue";
 import Utils from "../config/utils.js";
 import { formatCountryCode, validatePhoneFields } from "../utils/phoneUtils.js";
 import { normalizeAddressFields } from "../utils/locationData.js";
@@ -35,6 +36,17 @@ const emptyForm = () => ({
   postalCode: "",
   phoneContryCode: "",
   phoneNumber: "",
+  birthDate: "",
+  gender: null,
+  emergencyContactName: "",
+  emergencyContactPhoneCountryCode: "",
+  emergencyContactPhoneNumber: "",
+  hasAllergies: false,
+  allergiesDescription: "",
+  takesMedication: false,
+  currentChurchHome: "",
+  currentChurchHomeCity: "",
+  currentChurchHomeStateProv: "",
   bioText: "",
   isAdmin: false,
   orgId: null,
@@ -122,6 +134,14 @@ const save = () => {
     formError.value = phoneValidation;
     return;
   }
+  const emergencyPhoneValidation = validatePhoneFields(
+    form.value.emergencyContactPhoneCountryCode,
+    form.value.emergencyContactPhoneNumber
+  );
+  if (emergencyPhoneValidation !== true) {
+    formError.value = `Emergency contact: ${emergencyPhoneValidation}`;
+    return;
+  }
 
   saving.value = true;
   formError.value = "";
@@ -140,6 +160,21 @@ const save = () => {
     postalCode: form.value.postalCode?.trim() || null,
     phoneContryCode: form.value.phoneContryCode ? formatCountryCode(form.value.phoneContryCode) : null,
     phoneNumber: form.value.phoneNumber?.trim() || null,
+    birthDate: form.value.birthDate || null,
+    gender: form.value.gender || null,
+    emergencyContactName: form.value.emergencyContactName?.trim() || null,
+    emergencyContactPhoneCountryCode: form.value.emergencyContactPhoneCountryCode
+      ? formatCountryCode(form.value.emergencyContactPhoneCountryCode)
+      : null,
+    emergencyContactPhoneNumber: form.value.emergencyContactPhoneNumber?.trim() || null,
+    hasAllergies: !!form.value.hasAllergies,
+    allergiesDescription: form.value.hasAllergies
+      ? form.value.allergiesDescription?.trim() || null
+      : null,
+    takesMedication: !!form.value.takesMedication,
+    currentChurchHome: form.value.currentChurchHome?.trim() || null,
+    currentChurchHomeCity: form.value.currentChurchHomeCity?.trim() || null,
+    currentChurchHomeStateProv: form.value.currentChurchHomeStateProv?.trim() || null,
     bioText: form.value.bioText?.trim() || null,
     orgId: form.value.orgId,
     roleId: form.value.roleId,
@@ -257,6 +292,7 @@ const save = () => {
             <PhoneInput v-model="form.phoneNumber" label="Phone number" />
           </v-col>
         </v-row>
+        <PersonProfileFields v-model="form" />
         <v-textarea v-model="form.bioText" label="Bio" density="compact" rows="3" autocomplete="off" />
 
         <v-alert v-if="formError" type="error" density="compact" class="mt-2">{{ formError }}</v-alert>

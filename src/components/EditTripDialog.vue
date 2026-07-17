@@ -2,6 +2,8 @@
 import { ref, computed, watch } from "vue";
 import TripServices from "../services/tripServices.js";
 import OrganizationServices from "../services/organizationServices.js";
+import WorkerRoleServices from "../services/workerRoleServices.js";
+import TripWorkerRoleServices from "../services/tripWorkerRoleServices.js";
 import Utils from "../config/utils.js";
 import { useVersionConflictForm } from "../utils/useVersionConflictForm.js";
 import { useTripLeaderPicker } from "../utils/useTripLeaderPicker.js";
@@ -49,6 +51,14 @@ const form = ref(emptyForm());
 const imageFile = ref(null);
 const imagePreview = ref(null);
 
+const workerRoles = ref([]);
+const workerRolesLoading = ref(false);
+const selectedRoles = ref([]);
+const initialRoleIds = ref([]);
+const addRoleId = ref(null);
+const addQuantity = ref(1);
+const rolesError = ref("");
+
 const currentImageUrl = computed(() => TripServices.getImageUrl(form.value.image));
 
 const clearImageSelection = () => {
@@ -95,6 +105,129 @@ const orgDisplayName = computed(() => {
   return organizations.value.find((o) => o.id === form.value.orgId)?.name || "";
 });
 
+const availableRoleItems = computed(() => {
+  const usedIds = new Set(selectedRoles.value.map((r) => Number(r.workerRoleId)));
+  return workerRoles.value
+    .filter((r) => !usedIds.has(Number(r.id)))
+    .map((r) => ({
+      title: r.licenseRequired
+        ? `${r.name} (${r.documentType?.description ? r.documentType.description + " " : ""}license required)`
+        : r.name,
+      value: r.id,
+    }));
+});
+
+const totalRolesNeeded = computed(() =>
+  selectedRoles.value.reduce((sum, r) => sum + Number(r.quantity || 0), 0)
+);
+
+const resetRoles = () => {
+  selectedRoles.value = [];
+  initialRoleIds.value = [];
+  addRoleId.value = null;
+  addQuantity.value = 1;
+  rolesError.value = "";
+  workerRoles.value = [];
+};
+
+const mapTripRoleRow = (row) => ({
+  id: row.id,
+  workerRoleId: row.workerRoleId,
+  name: row.workerRole?.name || "—",
+  description: row.workerRole?.description || "",
+  licenseRequired: !!row.workerRole?.licenseRequired,
+  documentTypeDescription: row.workerRole?.documentType?.description || "",
+  quantity: Number(row.quantity) || 1,
+  originalQuantity: Number(row.quantity) || 1,
+});
+
+const loadWorkerRoles = async (orgId) => {
+  if (!orgId) {
+    workerRoles.value = [];
+    return;
+  }
+  workerRolesLoading.value = true;
+  rolesError.value = "";
+  try {
+    const res = await WorkerRoleServices.getAll({ orgId, status: "active" });
+    workerRoles.value = res.data || [];
+  } catch (e) {
+    workerRoles.value = [];
+    rolesError.value = e.response?.data?.message || "Unable to load worker roles.";
+  } finally {
+    workerRolesLoading.value = false;
+  }
+};
+
+const loadTripRoles = async (tripId) => {
+  const res = await TripWorkerRoleServices.getAll(tripId);
+  const rows = (res.data || []).map(mapTripRoleRow);
+  selectedRoles.value = rows;
+  initialRoleIds.value = rows.map((r) => r.id);
+};
+
+const addSelectedRole = () => {
+  if (!addRoleId.value) return;
+  const qty = Number(addQuantity.value);
+  if (!Number.isInteger(qty) || qty < 1) {
+    rolesError.value = "Quantity must be a positive whole number.";
+    return;
+  }
+  const role = workerRoles.value.find((r) => Number(r.id) === Number(addRoleId.value));
+  if (!role) return;
+  if (selectedRoles.value.some((r) => Number(r.workerRoleId) === Number(role.id))) {
+    rolesError.value = "That role is already selected.";
+    return;
+  }
+  rolesError.value = "";
+  selectedRoles.value.push({
+    id: null,
+    workerRoleId: role.id,
+    name: role.name,
+    description: role.description || "",
+    licenseRequired: !!role.licenseRequired,
+    documentTypeDescription: role.documentType?.description || "",
+    quantity: qty,
+    originalQuantity: null,
+  });
+  addRoleId.value = null;
+  addQuantity.value = 1;
+};
+
+const removeSelectedRole = (workerRoleId) => {
+  selectedRoles.value = selectedRoles.value.filter(
+    (r) => Number(r.workerRoleId) !== Number(workerRoleId)
+  );
+};
+
+const syncTripRoles = async (tripId) => {
+  const currentIds = new Set(
+    selectedRoles.value.filter((r) => r.id != null).map((r) => Number(r.id))
+  );
+  const toDelete = initialRoleIds.value.filter((id) => !currentIds.has(Number(id)));
+
+  await Promise.all([
+    ...toDelete.map((id) => TripWorkerRoleServices.delete(id)),
+    ...selectedRoles.value
+      .filter((r) => r.id == null)
+      .map((r) =>
+        TripWorkerRoleServices.create({
+          tripId: Number(tripId),
+          workerRoleId: Number(r.workerRoleId),
+          quantity: Number(r.quantity),
+        })
+      ),
+    ...selectedRoles.value
+      .filter(
+        (r) =>
+          r.id != null && Number(r.quantity) !== Number(r.originalQuantity)
+      )
+      .map((r) =>
+        TripWorkerRoleServices.update(r.id, { quantity: Number(r.quantity) })
+      ),
+  ]);
+};
+
 const applyTripData = (data) => {
   form.value = {
     ...emptyForm(),
@@ -112,6 +245,7 @@ const loadTrip = async ({ afterConflict = false } = {}) => {
   user.value = Utils.getStore("user");
   loading.value = true;
   onLoadStart({ afterConflict });
+  resetRoles();
 
   try {
     if (isSystemAdmin.value) {
@@ -121,7 +255,11 @@ const loadTrip = async ({ afterConflict = false } = {}) => {
     const res = await TripServices.get(props.tripId);
     applyTripData(res.data || {});
     setLeadersFromTrip(res.data?.leaderPeopleIds || []);
-    await loadLeaderOptions(form.value.orgId);
+    await Promise.all([
+      loadLeaderOptions(form.value.orgId),
+      loadWorkerRoles(form.value.orgId),
+      loadTripRoles(props.tripId),
+    ]);
     onLoadSuccess({ afterConflict });
   } catch (e) {
     formError.value = e.response?.data?.message || "Unable to load trip.";
@@ -136,6 +274,7 @@ watch(
     if (open && id) loadTrip();
     if (!open) {
       resetLeaders();
+      resetRoles();
       clearImageSelection();
     }
   }
@@ -146,6 +285,10 @@ watch(
   (orgId, prevOrgId) => {
     if (!props.modelValue || loading.value || prevOrgId == null) return;
     loadLeaderOptions(orgId);
+    selectedRoles.value = [];
+    addRoleId.value = null;
+    addQuantity.value = 1;
+    loadWorkerRoles(orgId);
   }
 );
 
@@ -162,6 +305,13 @@ const save = async () => {
   if (!form.value.orgId) {
     formError.value = "Organization is required.";
     return;
+  }
+  for (const row of selectedRoles.value) {
+    const qty = Number(row.quantity);
+    if (!Number.isInteger(qty) || qty < 1) {
+      formError.value = "Each team role needs a positive whole number.";
+      return;
+    }
   }
 
   saving.value = true;
@@ -189,6 +339,15 @@ const save = async () => {
     if (imageFile.value) {
       await TripServices.uploadImage(form.value.id, imageFile.value);
     }
+    try {
+      await syncTripRoles(form.value.id);
+    } catch (roleErr) {
+      formError.value =
+        roleErr.response?.data?.message ||
+        "Trip was saved, but some team roles could not be updated. You can edit them on the trip page.";
+      emit("saved");
+      return;
+    }
     emit("saved");
     close();
   } catch (e) {
@@ -200,7 +359,7 @@ const save = async () => {
 </script>
 
 <template>
-  <v-dialog :model-value="modelValue" max-width="560" scrollable @update:model-value="(v) => !v && close()">
+  <v-dialog :model-value="modelValue" max-width="640" scrollable @update:model-value="(v) => !v && close()">
     <v-card>
       <v-card-title>Edit trip</v-card-title>
 
@@ -330,6 +489,109 @@ const save = async () => {
             class="mt-2"
           />
 
+          <div class="mt-4">
+            <div class="d-flex align-center justify-space-between mb-2">
+              <div class="text-subtitle-2">Team roles needed</div>
+              <span v-if="selectedRoles.length" class="text-caption text-medium-emphasis">
+                {{ totalRolesNeeded }} needed
+              </span>
+            </div>
+
+            <v-progress-linear v-if="workerRolesLoading" indeterminate class="mb-3" />
+
+            <v-table v-if="selectedRoles.length" density="compact" class="mb-3">
+              <thead>
+                <tr>
+                  <th>Role</th>
+                  <th style="width: 130px">Number Needed</th>
+                  <th style="width: 90px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in selectedRoles" :key="row.id || `new-${row.workerRoleId}`">
+                  <td>
+                    <div>
+                      {{ row.name }}
+                      <span v-if="row.licenseRequired" class="text-caption text-medium-emphasis">
+                        ({{ row.documentTypeDescription ? row.documentTypeDescription + " · " : "" }}license required)
+                      </span>
+                    </div>
+                    <div v-if="row.description" class="text-caption text-medium-emphasis">
+                      {{ row.description }}
+                    </div>
+                  </td>
+                  <td>
+                    <v-text-field
+                      v-model.number="row.quantity"
+                      type="number"
+                      min="1"
+                      density="compact"
+                      hide-details
+                    />
+                  </td>
+                  <td>
+                    <v-btn
+                      size="small"
+                      variant="text"
+                      color="error"
+                      @click="removeSelectedRole(row.workerRoleId)"
+                    >
+                      Remove
+                    </v-btn>
+                  </td>
+                </tr>
+              </tbody>
+            </v-table>
+
+            <p v-else class="text-body-2 text-medium-emphasis mb-3">
+              Optional — add staffing roles for this trip.
+            </p>
+
+            <div class="add-role-form pa-4 rounded mb-2">
+              <div class="text-subtitle-2 mb-3">Add Role</div>
+              <div class="d-flex align-center ga-3 flex-wrap">
+                <v-select
+                  v-model="addRoleId"
+                  :items="availableRoleItems"
+                  label="Worker role"
+                  density="compact"
+                  hide-details
+                  style="max-width: 280px; min-width: 180px"
+                  :disabled="!form.orgId || !availableRoleItems.length"
+                  :placeholder="
+                    !form.orgId
+                      ? 'Select an organization first'
+                      : availableRoleItems.length
+                        ? undefined
+                        : 'No more active roles to add'
+                  "
+                />
+                <v-text-field
+                  v-model.number="addQuantity"
+                  type="number"
+                  min="1"
+                  label="Number Needed"
+                  density="compact"
+                  hide-details
+                  style="max-width: 120px"
+                  :disabled="!form.orgId"
+                />
+                <v-btn
+                  color="primary"
+                  size="small"
+                  :disabled="!addRoleId"
+                  @click="addSelectedRole"
+                >
+                  Add role
+                </v-btn>
+              </div>
+            </div>
+
+            <v-alert v-if="rolesError" type="error" density="compact" class="mt-2">
+              {{ rolesError }}
+            </v-alert>
+          </div>
+
           <v-alert v-if="leadersError" type="error" density="compact" class="mt-2">{{ leadersError }}</v-alert>
         </template>
 
@@ -345,3 +607,9 @@ const save = async () => {
     </v-card>
   </v-dialog>
 </template>
+
+<style scoped>
+.add-role-form {
+  background-color: #f0f0f0;
+}
+</style>

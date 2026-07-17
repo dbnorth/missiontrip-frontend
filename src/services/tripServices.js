@@ -4,6 +4,18 @@ export default {
   getAll() {
     return apiClient.get("/trips");
   },
+  getBrowseOrgs() {
+    return apiClient.get("/trips/browse/orgs");
+  },
+  getBrowseTrips(orgId) {
+    return apiClient.get("/trips/browse", { params: { orgId } });
+  },
+  getBrowseTrip(id) {
+    return apiClient.get(`/trips/browse/${id}`);
+  },
+  applyToTrip(id, data = {}) {
+    return apiClient.post(`/trips/browse/${id}/apply`, data);
+  },
   get(id) {
     return apiClient.get(`/trips/${id}`);
   },
