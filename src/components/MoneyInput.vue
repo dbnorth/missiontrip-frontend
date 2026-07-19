@@ -8,6 +8,7 @@ const props = defineProps({
   readonly: { type: Boolean, default: false },
   disabled: { type: Boolean, default: false },
   required: { type: Boolean, default: false },
+  allowNegative: { type: Boolean, default: false },
   density: { type: String, default: "compact" },
   hideDetails: { type: Boolean, default: false },
 });
@@ -17,10 +18,13 @@ const emit = defineEmits(["update:modelValue"]);
 const focused = ref(false);
 const editText = ref("");
 
+const moneyOpts = computed(() => ({ allowNegative: props.allowNegative }));
+
 const syncEditTextFromModel = () => {
-  editText.value = props.modelValue != null && props.modelValue !== ""
-    ? parseMoneyInput(String(props.modelValue))
-    : "";
+  editText.value =
+    props.modelValue != null && props.modelValue !== ""
+      ? parseMoneyInput(String(props.modelValue), moneyOpts.value)
+      : "";
 };
 
 watch(
@@ -34,16 +38,21 @@ watch(
 const displayValue = computed(() => {
   if (focused.value) return editText.value;
   if (props.modelValue == null || props.modelValue === "") return "";
-  return formatMoneyDisplay(props.modelValue);
+  return formatMoneyDisplay(props.modelValue, moneyOpts.value);
 });
 
 const rules = computed(() => {
   if (props.disabled || props.readonly) return [];
-  const r = [(v) => moneyRule(focused.value ? editText.value : v)];
+  const r = [(v) => moneyRule(focused.value ? editText.value : v, moneyOpts.value)];
   if (props.required) {
     r.unshift(() => {
-      const amount = parseMoneyAmount(focused.value ? editText.value : props.modelValue);
-      return amount != null && amount > 0 ? true : "Amount is required";
+      const amount = parseMoneyAmount(
+        focused.value ? editText.value : props.modelValue,
+        moneyOpts.value
+      );
+      if (amount == null) return "Amount is required";
+      if (!props.allowNegative && amount <= 0) return "Amount is required";
+      return true;
     });
   }
   return r;
@@ -56,13 +65,13 @@ const onFocus = () => {
 
 const onBlur = () => {
   focused.value = false;
-  const parsed = parseMoneyInput(editText.value);
+  const parsed = parseMoneyInput(editText.value, moneyOpts.value);
   editText.value = parsed;
   emit("update:modelValue", parsed);
 };
 
 const onInput = (v) => {
-  editText.value = parseMoneyInput(v);
+  editText.value = parseMoneyInput(v, moneyOpts.value);
   emit("update:modelValue", editText.value);
 };
 </script>

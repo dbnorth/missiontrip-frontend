@@ -5,6 +5,7 @@ import TripServices from "../services/tripServices.js";
 import DonorTripHeading from "../components/DonorTripHeading.vue";
 import ApplyTripDialog from "../components/ApplyTripDialog.vue";
 import { formatMoneyDisplay } from "../utils/moneyUtils.js";
+import { tripParticipantStatusLabel } from "../utils/tripParticipantStatus.js";
 
 const props = defineProps({
   tripId: { type: [String, Number], required: true },
@@ -21,9 +22,8 @@ const messageType = ref("info");
 const showApplyDialog = ref(false);
 
 const applyLabel = computed(() => {
-  if (applicationStatus.value === "active") return "Joined";
-  if (alreadyApplied.value) return "Applied";
-  return "Apply";
+  if (!alreadyApplied.value) return "Apply";
+  return tripParticipantStatusLabel(applicationStatus.value) || "Apply";
 });
 
 const load = async () => {

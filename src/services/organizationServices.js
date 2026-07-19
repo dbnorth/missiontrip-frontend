@@ -24,6 +24,12 @@ export default {
     form.append("logo", file);
     return apiClient.put(`/organizations/${id}/logo`, form);
   },
+  getAgreement(id) {
+    return apiClient.get(`/organizations/${id}/agreement`);
+  },
+  saveAgreement(id, content) {
+    return apiClient.put(`/organizations/${id}/agreement`, { content });
+  },
   getLogoUrl(logo) {
     if (!logo) return null;
     // Legacy path: uploads/org-logos/...

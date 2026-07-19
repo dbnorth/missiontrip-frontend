@@ -5,6 +5,7 @@ import TripPeopleRoleServices from "../services/tripPeopleRoleServices.js";
 import TripWorkerRoleServices from "../services/tripWorkerRoleServices.js";
 import MoneyInput from "./MoneyInput.vue";
 import { formatMoneyDisplay, parseMoneyAmount } from "../utils/moneyUtils.js";
+import { TRIP_PARTICIPANT_STATUS_OPTIONS } from "../utils/tripParticipantStatus.js";
 import { useVersionConflictForm } from "../utils/useVersionConflictForm.js";
 
 const props = defineProps({
@@ -20,8 +21,10 @@ const saving = ref(false);
 const { formError, formNotice, prepareSave, onLoadStart, onLoadSuccess, handleSaveError } =
   useVersionConflictForm();
 
+const statusItems = TRIP_PARTICIPANT_STATUS_OPTIONS;
+
 const form = ref({
-  status: "active",
+  status: "incomplete",
   tripWorkerRoleId: null,
   participantCost: "",
   whygoText: "",
@@ -43,7 +46,7 @@ const tripWorkerRoleLabel = (row) => {
 const applyParticipant = (row) => {
   if (!row) return;
   form.value = {
-    status: row.status || "active",
+    status: row.status || "incomplete",
     tripWorkerRoleId: row.tripWorkerRoleId ?? null,
     participantCost: row.participantCost != null ? String(row.participantCost) : "",
     whygoText: row.whygoText || "",
@@ -153,7 +156,9 @@ const save = async () => {
         />
         <v-select
           v-model="form.status"
-          :items="['active', 'inactive']"
+          :items="statusItems"
+          item-title="title"
+          item-value="value"
           label="Status"
           density="compact"
         />

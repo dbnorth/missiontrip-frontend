@@ -1,27 +1,34 @@
 <script setup>
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, onMounted } from "vue";
+import { useRouter } from "vue-router";
 import TripServices from "../services/tripServices.js";
 import PersonServices from "../services/personServices.js";
 import PersonDocumentServices from "../services/personDocumentServices.js";
 import Utils from "../config/utils.js";
-import DonorTripHeading from "./DonorTripHeading.vue";
-import ParticipantAgreementSection from "./ParticipantAgreementSection.vue";
-import TripApplicationTravelOptions from "./TripApplicationTravelOptions.vue";
+import DonorTripHeading from "../components/DonorTripHeading.vue";
+import ParticipantAgreementSection from "../components/ParticipantAgreementSection.vue";
+import TripApplicationTravelOptions from "../components/TripApplicationTravelOptions.vue";
+import {
+  tripParticipantStatusLabel,
+  tripParticipantStatusColor,
+} from "../utils/tripParticipantStatus.js";
 import { getMissingProfileFields, isProfileComplete, isUnder18 } from "../utils/personProfile.js";
 import { isApplicationFormComplete } from "../utils/tripApplicationForm.js";
 
 const props = defineProps({
-  modelValue: { type: Boolean, default: false },
-  tripId: { type: [Number, String], default: null },
+  tripId: { type: [String, Number], required: true },
 });
 
-const emit = defineEmits(["update:modelValue", "saved"]);
-
+const router = useRouter();
 const loading = ref(false);
 const saving = ref(false);
 const formError = ref("");
+const message = ref("");
+const messageType = ref("info");
 const trip = ref(null);
 const rolesNeeded = ref([]);
+const application = ref(null);
+const canEdit = ref(false);
 const personDocuments = ref([]);
 const person = ref(null);
 const agreementContent = ref("");
@@ -38,29 +45,34 @@ const form = ref({
   preferredRoommateNames: "",
   agreementAccepted: false,
   agreementSignatureName: "",
+  agreementDate: null,
   agreementAdultFirstName: "",
   agreementAdultLastName: "",
   agreementAdultEmail: "",
   agreementAdultRelationship: "",
+  version: 0,
 });
 
 const agreementRequired = computed(() => !!agreementContent.value?.trim());
 const participantUnder18 = computed(() => isUnder18(person.value?.birthDate));
 
-const availableRoles = computed(() =>
-  (rolesNeeded.value || []).filter((r) => (r.availableCount || 0) > 0)
-);
+const availableRoles = computed(() => {
+  const currentId = Number(form.value.tripWorkerRoleId || application.value?.tripWorkerRoleId);
+  return (rolesNeeded.value || []).filter(
+    (r) => (r.availableCount || 0) > 0 || Number(r.id) === currentId
+  );
+});
 
 const roleItems = computed(() =>
   availableRoles.value.map((r) => ({
     title: `${r.workerRole?.name || "Role"} (${r.availableCount} available)`,
     value: r.id,
-    raw: r,
   }))
 );
 
-const selectedRole = computed(() =>
-  availableRoles.value.find((r) => Number(r.id) === Number(form.value.tripWorkerRoleId)) || null
+const selectedRole = computed(
+  () =>
+    availableRoles.value.find((r) => Number(r.id) === Number(form.value.tripWorkerRoleId)) || null
 );
 
 const licenseRequired = computed(() => !!selectedRole.value?.workerRole?.licenseRequired);
@@ -89,15 +101,11 @@ const dateOnly = (value) => {
 const hasRequiredDocumentForTrip = computed(() => {
   const docTypeId = selectedRole.value?.workerRole?.documentTypeId;
   if (!docTypeId) return true;
-
-  // Prefer trip end date (approval requirement); fall back to start date.
   const compareDate = dateOnly(trip.value?.endDate) || dateOnly(trip.value?.startDate);
   if (!compareDate) return true;
-
   return personDocuments.value.some((doc) => {
     if (Number(doc.documentTypeId) !== Number(docTypeId)) return false;
     const expirationDate = dateOnly(doc.expirationDate);
-    // Must expire after the trip ends (past the end of the trip).
     return expirationDate && expirationDate > compareDate;
   });
 });
@@ -105,7 +113,6 @@ const hasRequiredDocumentForTrip = computed(() => {
 const documentRequirementWarning = computed(() => {
   if (!licenseRequired.value || !requiredDocumentType.value) return "";
   if (hasRequiredDocumentForTrip.value) return "";
-
   const docName = requiredDocumentType.value.description || "required document";
   const endDate = dateOnly(trip.value?.endDate);
   const endPart = endDate ? ` (${endDate})` : "";
@@ -131,29 +138,9 @@ const canAgreeToAgreement = computed(
   () => profileComplete.value && applicationFormComplete.value
 );
 
-const open = computed({
-  get: () => props.modelValue,
-  set: (v) => emit("update:modelValue", v),
-});
-
-const resetForm = () => {
-  form.value = {
-    tripWorkerRoleId: null,
-    willSelfFund: false,
-    willRaiseFunds: false,
-    licenseStatus: null,
-    hasPreferredRoommate: false,
-    preferredRoommateNames: "",
-    agreementAccepted: false,
-    agreementSignatureName: "",
-    agreementAdultFirstName: "",
-    agreementAdultLastName: "",
-    agreementAdultEmail: "",
-    agreementAdultRelationship: "",
-  };
-  selectedTravelOptionIds.value = [];
-  formError.value = "";
-};
+const statusLabel = computed(() =>
+  tripParticipantStatusLabel(application.value?.status)
+);
 
 const loadPersonDocuments = async () => {
   const personId = Utils.getStore("user")?.personId;
@@ -183,19 +170,39 @@ const loadPerson = async () => {
   }
 };
 
+const applyFormFromApplication = (row) => {
+  form.value = {
+    tripWorkerRoleId: row?.tripWorkerRoleId ?? null,
+    willSelfFund: !!row?.willSelfFund,
+    willRaiseFunds: !!row?.willRaiseFunds,
+    licenseStatus: row?.licenseStatus || null,
+    hasPreferredRoommate: !!row?.hasPreferredRoommate,
+    preferredRoommateNames: row?.preferredRoommateNames || "",
+    agreementAccepted: !!row?.agreementAccepted,
+    agreementSignatureName: row?.agreementSignatureName || "",
+    agreementDate: row?.agreementDate || null,
+    agreementAdultFirstName: row?.agreementAdultFirstName || "",
+    agreementAdultLastName: row?.agreementAdultLastName || "",
+    agreementAdultEmail: row?.agreementAdultEmail || "",
+    agreementAdultRelationship: row?.agreementAdultRelationship || "",
+    version: row?.version ?? 0,
+  };
+};
+
 const load = async () => {
-  if (!props.tripId) return;
   loading.value = true;
   formError.value = "";
-  resetForm();
+  message.value = "";
   try {
     const [res] = await Promise.all([
-      TripServices.getBrowseTrip(props.tripId),
+      TripServices.getApplication(props.tripId),
       loadPersonDocuments(),
       loadPerson(),
     ]);
     trip.value = res.data?.trip || null;
     rolesNeeded.value = res.data?.rolesNeeded || [];
+    application.value = res.data?.application || null;
+    canEdit.value = !!res.data?.canEdit;
     travelOptions.value = res.data?.travelOptions || [];
     selectedTravelOptionIds.value = (res.data?.travelOptions || [])
       .filter((o) => o.selected)
@@ -203,46 +210,22 @@ const load = async () => {
     agreementContent.value = res.data?.participantAgreement?.exists
       ? res.data.participantAgreement.content || ""
       : "";
-    if (res.data?.alreadyApplied) {
-      const status = res.data?.applicationStatus;
-      formError.value =
-        status === "approved"
-          ? "You are already on this trip."
-          : status === "incomplete" || status === "ready"
-            ? "You have already applied to this trip."
-            : status
-              ? `Your previous application for this trip is ${status}.`
-              : "You have already applied to this trip.";
+    applyFormFromApplication(application.value);
+    if (!canEdit.value) {
+      formError.value = `This application cannot be edited while its status is ${statusLabel.value}.`;
     }
   } catch (e) {
-    formError.value = e.response?.data?.message || "Unable to load trip.";
+    formError.value = e.response?.data?.message || "Unable to load application.";
     trip.value = null;
     rolesNeeded.value = [];
-    personDocuments.value = [];
+    application.value = null;
     travelOptions.value = [];
     selectedTravelOptionIds.value = [];
-    agreementContent.value = "";
+    canEdit.value = false;
   } finally {
     loading.value = false;
   }
 };
-
-watch(
-  () => [props.modelValue, props.tripId],
-  ([visible]) => {
-    if (visible && props.tripId) load();
-    if (!visible) {
-      trip.value = null;
-      rolesNeeded.value = [];
-      personDocuments.value = [];
-      person.value = null;
-      travelOptions.value = [];
-      selectedTravelOptionIds.value = [];
-      agreementContent.value = "";
-      resetForm();
-    }
-  }
-);
 
 watch(
   () => form.value.tripWorkerRoleId,
@@ -258,12 +241,13 @@ watch(
   }
 );
 
-const close = () => {
-  open.value = false;
-};
-
 const save = async () => {
   formError.value = "";
+  message.value = "";
+  if (!canEdit.value) {
+    formError.value = "This application cannot be edited.";
+    return;
+  }
   if (!form.value.tripWorkerRoleId) {
     formError.value = "Select a trip role with available positions.";
     return;
@@ -306,7 +290,7 @@ const save = async () => {
 
   saving.value = true;
   try {
-    await TripServices.applyToTrip(props.tripId, {
+    const res = await TripServices.updateApplication(props.tripId, {
       tripWorkerRoleId: Number(form.value.tripWorkerRoleId),
       willSelfFund: !!form.value.willSelfFund,
       willRaiseFunds: !!form.value.willRaiseFunds,
@@ -336,143 +320,182 @@ const save = async () => {
           ? form.value.agreementAdultRelationship.trim() || null
           : null,
       selectedTravelOptionIds: selectedTravelOptionIds.value,
+      version: form.value.version,
     });
-    emit("saved");
-    close();
+    application.value = res.data?.application || application.value;
+    if (res.data?.travelOptions) {
+      travelOptions.value = res.data.travelOptions;
+      selectedTravelOptionIds.value = res.data.travelOptions
+        .filter((o) => o.selected)
+        .map((o) => Number(o.id));
+    }
+    canEdit.value = ["incomplete", "ready"].includes(application.value?.status);
+    applyFormFromApplication(application.value);
+    messageType.value = "success";
+    message.value = res.data?.message || "Application updated.";
   } catch (e) {
-    formError.value = e.response?.data?.message || "Unable to submit application.";
+    formError.value = e.response?.data?.message || "Unable to update application.";
   } finally {
     saving.value = false;
   }
 };
+
+onMounted(load);
 </script>
 
 <template>
-  <v-dialog v-model="open" max-width="640" scrollable persistent>
-    <v-card>
-      <v-card-title>Apply for trip</v-card-title>
-      <v-card-text style="max-height: 75vh">
-        <v-progress-linear v-if="loading" indeterminate class="mb-4" />
+  <v-container>
+    <div class="d-flex align-center justify-space-between mb-4 flex-wrap ga-2">
+      <v-btn variant="text" @click="router.push({ name: 'home' })">Back to dashboard</v-btn>
+      <v-chip
+        v-if="application"
+        size="small"
+        variant="tonal"
+        :color="tripParticipantStatusColor(application.status)"
+      >
+        {{ statusLabel }}
+      </v-chip>
+    </div>
 
-        <template v-if="!loading && trip">
-          <DonorTripHeading :trip="trip" />
+    <h1 class="text-h5 mb-4">Update application</h1>
 
-          <v-alert
-            v-if="!profileComplete"
-            type="warning"
-            density="compact"
-            class="mb-3"
-          >
-            Your profile is incomplete. Update your profile for this application to be marked Ready.
-            <ul v-if="missingProfileFields.length" class="mt-2 mb-0">
-              <li v-for="field in missingProfileFields" :key="field">{{ field }}</li>
-            </ul>
-          </v-alert>
+    <v-progress-linear v-if="loading" indeterminate class="mb-4" />
+    <v-alert v-if="message" :type="messageType" density="compact" class="mb-4">{{ message }}</v-alert>
+    <v-alert v-if="formError" type="error" density="compact" class="mb-4">{{ formError }}</v-alert>
 
-          <v-alert
-            v-if="!availableRoles.length"
-            type="warning"
-            density="compact"
-            class="mb-3"
-          >
-            There are no trip roles with available positions right now.
-          </v-alert>
+    <template v-if="!loading && trip">
+      <DonorTripHeading :trip="trip" />
 
-          <v-select
-            v-model="form.tripWorkerRoleId"
-            :items="roleItems"
-            label="Trip role"
-            density="compact"
-            :disabled="!availableRoles.length"
-            hint="Only roles with open positions are listed"
-            persistent-hint
-            class="mb-2"
-          />
+      <v-alert
+        v-if="!profileComplete"
+        type="warning"
+        density="compact"
+        class="mt-4 mb-0"
+        max-width="640"
+      >
+        Your profile is incomplete. Update your profile for this application to be marked Ready.
+        <ul v-if="missingProfileFields.length" class="mt-2 mb-0">
+          <li v-for="field in missingProfileFields" :key="field">{{ field }}</li>
+        </ul>
+        <div class="mt-3">
+          <v-btn size="small" color="primary" variant="tonal" @click="router.push({ name: 'home' })">
+            Update profile
+          </v-btn>
+        </div>
+      </v-alert>
 
-          <v-alert
-            v-if="documentRequirementWarning"
-            type="warning"
-            density="compact"
-            class="mb-3"
-          >
-            {{ documentRequirementWarning }}
-          </v-alert>
-
-          <div class="text-subtitle-2 mb-1 mt-2">Funding</div>
-          <v-checkbox
-            v-model="form.willSelfFund"
-            label="I will self-fund"
-            density="compact"
-            hide-details
-            class="mt-0"
-          />
-          <v-checkbox
-            v-model="form.willRaiseFunds"
-            label="I will raise funds"
-            density="compact"
-            hide-details
-            class="mb-2"
-          />
-
-          <v-select
-            v-if="licenseRequired"
-            v-model="form.licenseStatus"
-            :items="licenseItems"
-            :label="licenseLabel"
-            density="compact"
-            class="mb-2"
-          />
-
-          <div class="text-subtitle-2 mb-1 mt-2">Roommate preference</div>
-          <v-checkbox
-            v-model="form.hasPreferredRoommate"
-            label="I have a preferred roommate"
-            density="compact"
-            hide-details
-            class="mt-0 mb-2"
-          />
-          <v-text-field
-            v-if="form.hasPreferredRoommate"
-            v-model="form.preferredRoommateNames"
-            label="Preferred roommate name(s)"
-            density="compact"
-            autocomplete="off"
-          />
-
-          <TripApplicationTravelOptions
-            ref="travelOptionsRef"
-            v-model:selected-ids="selectedTravelOptionIds"
-            :base-cost="trip?.participantCost"
-            :options="travelOptions"
-          />
-
-          <ParticipantAgreementSection
-            v-model:agreement-accepted="form.agreementAccepted"
-            v-model:agreement-signature-name="form.agreementSignatureName"
-            v-model:agreement-adult-first-name="form.agreementAdultFirstName"
-            v-model:agreement-adult-last-name="form.agreementAdultLastName"
-            v-model:agreement-adult-email="form.agreementAdultEmail"
-            v-model:agreement-adult-relationship="form.agreementAdultRelationship"
-            :under18="participantUnder18"
-            :can-agree="canAgreeToAgreement"
-            :content="agreementContent"
-          />
-        </template>
-
-        <v-alert v-if="formError" type="error" density="compact" class="mt-3">{{ formError }}</v-alert>
-      </v-card-text>
-      <v-card-actions>
-        <v-spacer />
-        <v-btn variant="text" :disabled="saving" @click="close">Cancel</v-btn>
-        <v-btn
-          color="primary"
-          :loading="saving"
-          :disabled="loading || !trip || !availableRoles.length"
-          @click="save"
+      <v-card class="pa-4 mt-4" variant="outlined" max-width="640">
+        <v-alert
+          v-if="!availableRoles.length"
+          type="warning"
+          density="compact"
+          class="mb-3"
         >
-          Submit application
-        </v-btn>
-      </v-card-actions>
-    </v-card>
-  </v-dialog>
+          There are no trip roles with available positions right now.
+        </v-alert>
+
+        <v-select
+          v-model="form.tripWorkerRoleId"
+          :items="roleItems"
+          label="Trip role"
+          density="compact"
+          :disabled="!canEdit || !availableRoles.length"
+          hint="Only roles with open positions are listed"
+          persistent-hint
+          class="mb-2"
+        />
+
+        <v-alert
+          v-if="documentRequirementWarning"
+          type="warning"
+          density="compact"
+          class="mb-3"
+        >
+          {{ documentRequirementWarning }}
+        </v-alert>
+
+        <div class="text-subtitle-2 mb-1 mt-2">Funding</div>
+        <v-checkbox
+          v-model="form.willSelfFund"
+          label="I will self-fund"
+          density="compact"
+          hide-details
+          :disabled="!canEdit"
+          class="mt-0"
+        />
+        <v-checkbox
+          v-model="form.willRaiseFunds"
+          label="I will raise funds"
+          density="compact"
+          hide-details
+          :disabled="!canEdit"
+          class="mb-2"
+        />
+
+        <v-select
+          v-if="licenseRequired"
+          v-model="form.licenseStatus"
+          :items="licenseItems"
+          :label="licenseLabel"
+          density="compact"
+          :disabled="!canEdit"
+          class="mb-2"
+        />
+
+        <div class="text-subtitle-2 mb-1 mt-2">Roommate preference</div>
+        <v-checkbox
+          v-model="form.hasPreferredRoommate"
+          label="I have a preferred roommate"
+          density="compact"
+          hide-details
+          :disabled="!canEdit"
+          class="mt-0 mb-2"
+        />
+        <v-text-field
+          v-if="form.hasPreferredRoommate"
+          v-model="form.preferredRoommateNames"
+          label="Preferred roommate name(s)"
+          density="compact"
+          autocomplete="off"
+          :disabled="!canEdit"
+        />
+
+        <TripApplicationTravelOptions
+          ref="travelOptionsRef"
+          v-model:selected-ids="selectedTravelOptionIds"
+          :base-cost="trip?.participantCost"
+          :options="travelOptions"
+          :disabled="!canEdit"
+        />
+
+        <ParticipantAgreementSection
+          v-model:agreement-accepted="form.agreementAccepted"
+          v-model:agreement-signature-name="form.agreementSignatureName"
+          v-model:agreement-adult-first-name="form.agreementAdultFirstName"
+          v-model:agreement-adult-last-name="form.agreementAdultLastName"
+          v-model:agreement-adult-email="form.agreementAdultEmail"
+          v-model:agreement-adult-relationship="form.agreementAdultRelationship"
+          :agreement-date="form.agreementDate"
+          :under18="participantUnder18"
+          :can-agree="canAgreeToAgreement"
+          :content="agreementContent"
+          :disabled="!canEdit"
+        />
+
+        <div class="d-flex justify-end ga-2 mt-4">
+          <v-btn variant="text" :disabled="saving" @click="router.push({ name: 'home' })">
+            Cancel
+          </v-btn>
+          <v-btn
+            color="primary"
+            :loading="saving"
+            :disabled="!canEdit || loading || !availableRoles.length"
+            @click="save"
+          >
+            Save application
+          </v-btn>
+        </div>
+      </v-card>
+    </template>
+  </v-container>
 </template>

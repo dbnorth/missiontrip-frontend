@@ -2,6 +2,7 @@
 import { ref, watch, computed } from "vue";
 import OrganizationServices from "../services/organizationServices.js";
 import OrganizationFormFields from "./OrganizationFormFields.vue";
+import OrganizationAgreementDialog from "./OrganizationAgreementDialog.vue";
 import { emptyOrganizationForm, buildOrganizationPayload } from "../utils/organizationForm.js";
 import { normalizeAddressFields } from "../utils/locationData.js";
 import { formatPhoneForDisplay, formatCountryCode, validatePhoneFields } from "../utils/phoneUtils.js";
@@ -18,12 +19,14 @@ const loading = ref(false);
 const saving = ref(false);
 const logoFile = ref(null);
 const logoPreview = ref(null);
+const showAgreementDialog = ref(false);
 const { formError, formNotice, prepareSave, onLoadStart, onLoadSuccess, handleSaveError } =
   useVersionConflictForm();
 
 const form = ref(emptyOrganizationForm());
 
 const currentLogoUrl = computed(() => OrganizationServices.getLogoUrl(form.value.logo));
+const hasAgreement = computed(() => !!form.value.agreementFileName);
 
 const clearLogoSelection = () => {
   if (logoPreview.value) URL.revokeObjectURL(logoPreview.value);
@@ -75,7 +78,18 @@ watch(
 
 const close = () => {
   clearLogoSelection();
+  showAgreementDialog.value = false;
   emit("update:modelValue", false);
+};
+
+const openAgreement = () => {
+  showAgreementDialog.value = true;
+};
+
+const onAgreementSaved = (data) => {
+  if (data?.agreementFileName) {
+    form.value.agreementFileName = data.agreementFileName;
+  }
 };
 
 const save = async () => {
@@ -146,6 +160,17 @@ const save = async () => {
               @update:model-value="onLogoSelected"
             />
           </div>
+
+          <div class="mt-4 mb-2">
+            <div class="text-subtitle-2 mb-2">Participant agreement</div>
+            <div class="text-caption text-medium-emphasis mb-2">
+              <span v-if="hasAgreement">Markdown agreement on file.</span>
+              <span v-else>No participant agreement saved yet.</span>
+            </div>
+            <v-btn variant="tonal" color="primary" size="small" @click="openAgreement">
+              Edit participant agreement
+            </v-btn>
+          </div>
         </template>
 
         <v-alert v-if="formNotice" type="warning" density="compact" class="mt-2">{{ formNotice }}</v-alert>
@@ -158,5 +183,12 @@ const save = async () => {
         <v-btn color="primary" :loading="saving" :disabled="loading" @click="save">Save</v-btn>
       </v-card-actions>
     </v-card>
+
+    <OrganizationAgreementDialog
+      v-model="showAgreementDialog"
+      :organization-id="organizationId || form.id"
+      :organization-name="form.name"
+      @saved="onAgreementSaved"
+    />
   </v-dialog>
 </template>

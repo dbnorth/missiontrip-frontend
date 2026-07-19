@@ -12,6 +12,7 @@ import EmailTemplatesList from "./views/EmailTemplatesList.vue";
 import WorkerRolesList from "./views/WorkerRolesList.vue";
 import DocumentTypesList from "./views/DocumentTypesList.vue";
 import TripBrowseView from "./views/TripBrowseView.vue";
+import EditTripApplicationView from "./views/EditTripApplicationView.vue";
 import DonorTripPage from "./views/DonorTripPage.vue";
 import DonorParticipantPage from "./views/DonorParticipantPage.vue";
 
@@ -25,6 +26,12 @@ const router = createRouter({
     { path: "/trips", name: "trips", component: TripsList },
     { path: "/trips/:tripId", name: "tripView", component: TripView, props: true },
     { path: "/browse-trips/:tripId", name: "tripBrowse", component: TripBrowseView, props: true },
+    {
+      path: "/browse-trips/:tripId/application",
+      name: "editTripApplication",
+      component: EditTripApplicationView,
+      props: true,
+    },
     { path: "/trip-people", name: "tripPeople", component: TripPeopleRolesList },
     { path: "/donations", name: "donations", component: DonationsList },
     { path: "/templates", name: "templates", component: EmailTemplatesList },
@@ -65,7 +72,10 @@ router.beforeEach((to, _from, next) => {
     next({ name: "home" });
     return;
   }
-  if (to.name === "tripBrowse" && !Utils.showParticipantOrPendingProfile(user)) {
+  if (
+    (to.name === "tripBrowse" || to.name === "editTripApplication") &&
+    !Utils.canBrowseAndApplyToTrips(user)
+  ) {
     next({ name: "home" });
     return;
   }

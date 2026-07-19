@@ -7,6 +7,7 @@ import TripPeopleRoleServices from "../services/tripPeopleRoleServices.js";
 import TripWorkerRoleServices from "../services/tripWorkerRoleServices.js";
 import MoneyInput from "./MoneyInput.vue";
 import { formatMoneyDisplay, parseMoneyAmount } from "../utils/moneyUtils.js";
+import { TRIP_PARTICIPANT_STATUS_OPTIONS } from "../utils/tripParticipantStatus.js";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -21,11 +22,12 @@ const tripWorkerRoles = ref([]);
 const tripDefaultCost = ref(null);
 const saving = ref(false);
 const formError = ref("");
+const statusItems = TRIP_PARTICIPANT_STATUS_OPTIONS;
 const form = ref({
   peopleId: null,
   roleId: null,
   tripWorkerRoleId: null,
-  status: "active",
+  status: "incomplete",
   participantCost: "",
   whygoText: "",
 });
@@ -57,7 +59,7 @@ const loadOptions = async () => {
     peopleId: null,
     roleId: participantRole?.id ?? roles.value[0]?.id ?? null,
     tripWorkerRoleId: null,
-    status: "active",
+    status: "incomplete",
     participantCost: "",
     whygoText: "",
   };
@@ -144,7 +146,9 @@ const save = () => {
         />
         <v-select
           v-model="form.status"
-          :items="['active', 'inactive']"
+          :items="statusItems"
+          item-title="title"
+          item-value="value"
           label="Status"
           density="compact"
         />

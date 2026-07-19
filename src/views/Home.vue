@@ -14,6 +14,7 @@ import {
   isProfileComplete,
   personDisplayName,
 } from "../utils/personProfile.js";
+import { tripParticipantStatusLabel, tripParticipantStatusColor } from "../utils/tripParticipantStatus.js";
 import { useRouter } from "vue-router";
 
 const router = useRouter();
@@ -88,14 +89,10 @@ const tripOptions = computed(() => {
   return roles.map((t) => ({ title: t.tripName, value: t.tripId }));
 });
 
-const needsPermissions = computed(() => !Utils.hasActiveAccess(user.value));
-
 const showProfileSection = computed(() => Utils.showParticipantOrPendingProfile(user.value));
 
 // Any non-admin signed-in user can browse/apply to active trips.
-const showTripBrowseSection = computed(
-  () => !!user.value && !Utils.isSystemAdmin(user.value)
-);
+const showTripBrowseSection = computed(() => Utils.canBrowseAndApplyToTrips(user.value));
 
 const profileName = computed(() =>
   personDisplayName(person.value, `${user.value?.firstName || ""} ${user.value?.lastName || ""}`.trim() || "Your profile")
@@ -177,6 +174,15 @@ const openApplyDialog = (trip) => {
   showApplyDialog.value = true;
 };
 
+const canUpdateApplication = (trip) =>
+  trip?.alreadyApplied &&
+  (trip.applicationStatus === "incomplete" || trip.applicationStatus === "ready");
+
+const openUpdateApplication = (trip) => {
+  if (!canUpdateApplication(trip)) return;
+  router.push({ name: "editTripApplication", params: { tripId: trip.id } });
+};
+
 const onApplicationSaved = () => {
   browseMessage.value = "Application submitted. Your organization will review it.";
   loadBrowseTrips();
@@ -210,14 +216,6 @@ const onProfileSaved = async () => {
   }
   await loadProfile();
 };
-
-const permissionsMessage = computed(() => {
-  const pending = Utils.pendingOrgNames(user.value);
-  if (pending.length) {
-    return `You have requested access to ${pending.join(", ")}. Your organization will need to add permissions for you to use this system.`;
-  }
-  return "Your organization will need to add permissions for you to use this system.";
-});
 
 const formatLeaders = (trip) => (trip.leaderNames || []).join(", ") || "—";
 
@@ -266,13 +264,6 @@ const loadLeaderTrips = async () => {
 };
 
 const loadDashboard = () => {
-  if (needsPermissions.value) {
-    summary.value = { message: permissionsMessage.value };
-    leaderTrips.value = [];
-    loading.value = false;
-    return;
-  }
-
   if (isTripLeaderOnly.value) {
     loadLeaderTrips();
     return;
@@ -298,7 +289,7 @@ const loadDashboard = () => {
     loading.value = false;
     return;
   } else {
-    summary.value = { message: permissionsMessage.value };
+    summary.value = null;
     loading.value = false;
     return;
   }
@@ -452,6 +443,7 @@ onUnmounted(() => {
                 <th>Location</th>
                 <th>Start</th>
                 <th>End</th>
+                <th>Status</th>
                 <th class="text-right" style="min-width: 180px">Actions</th>
               </tr>
             </thead>
@@ -461,6 +453,17 @@ onUnmounted(() => {
                 <td>{{ item.location || "—" }}</td>
                 <td>{{ formatDate(item.startDate) }}</td>
                 <td>{{ formatDate(item.endDate) }}</td>
+                <td>
+                  <v-chip
+                    v-if="item.alreadyApplied"
+                    size="small"
+                    variant="tonal"
+                    :color="tripParticipantStatusColor(item.applicationStatus)"
+                  >
+                    {{ tripParticipantStatusLabel(item.applicationStatus) }}
+                  </v-chip>
+                  <span v-else class="text-medium-emphasis">—</span>
+                </td>
                 <td class="text-right">
                   <div class="d-flex justify-end ga-2 flex-wrap">
                     <v-btn size="small" variant="tonal" @click="viewBrowseTrip(item)">View</v-btn>
@@ -472,9 +475,14 @@ onUnmounted(() => {
                     >
                       Apply
                     </v-btn>
-                    <v-chip v-else size="small" variant="tonal" color="success">
-                      {{ item.applicationStatus === "active" ? "Joined" : "Applied" }}
-                    </v-chip>
+                    <v-btn
+                      v-else-if="canUpdateApplication(item)"
+                      size="small"
+                      color="primary"
+                      @click="openUpdateApplication(item)"
+                    >
+                      Update App
+                    </v-btn>
                   </div>
                 </td>
               </tr>
@@ -505,9 +513,6 @@ onUnmounted(() => {
           </v-alert>
 
           <v-progress-linear v-if="loading" indeterminate class="mb-4" />
-          <v-alert v-if="needsPermissions" type="warning" prominent class="mb-4">
-            {{ permissionsMessage }}
-          </v-alert>
           <v-alert v-else-if="summary?.error" type="error" class="mb-4">{{ summary.error }}</v-alert>
           <v-alert
             v-else-if="!loading && !displayLeaderTrips.length"
@@ -518,7 +523,7 @@ onUnmounted(() => {
           </v-alert>
 
           <v-data-table
-            v-if="!needsPermissions && displayLeaderTrips.length"
+            v-if="displayLeaderTrips.length"
             :items="displayLeaderTrips"
             :loading="loading"
             :headers="[
@@ -560,10 +565,7 @@ onUnmounted(() => {
             @update:model-value="loadDashboard"
           />
           <v-progress-linear v-if="loading" indeterminate class="mb-4" />
-          <v-alert v-if="needsPermissions" type="warning" prominent class="mb-4">
-            {{ permissionsMessage }}
-          </v-alert>
-          <v-alert v-else-if="summary?.error" type="error">{{ summary.error }}</v-alert>
+          <v-alert v-if="summary?.error" type="error">{{ summary.error }}</v-alert>
           <v-alert v-else-if="summary?.message" type="info">{{ summary.message }}</v-alert>
           <v-alert
             v-else-if="isTripLeaderUser && !isOrgAdmin && !tripOptions.length"

@@ -38,6 +38,22 @@ export const getMissingProfileFields = (person) => {
 
 export const isProfileComplete = (person) => getMissingProfileFields(person).length === 0;
 
+/** Age under 18 as of a given date (defaults to today). */
+export const isUnder18 = (birthDate, asOf = new Date()) => {
+  if (!birthDate) return false;
+  const raw = String(birthDate).slice(0, 10);
+  const parts = raw.split("-").map(Number);
+  if (parts.length !== 3 || parts.some((n) => !Number.isFinite(n))) return false;
+  const [y, m, d] = parts;
+  const birth = new Date(y, m - 1, d);
+  const ref = asOf instanceof Date ? asOf : new Date(asOf);
+  if (Number.isNaN(birth.getTime()) || Number.isNaN(ref.getTime())) return false;
+  let age = ref.getFullYear() - birth.getFullYear();
+  const monthDiff = ref.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && ref.getDate() < birth.getDate())) age -= 1;
+  return age < 18;
+};
+
 export const personDisplayName = (person, fallback = "Your profile") => {
   const name = `${person?.firstName || ""} ${person?.lastName || ""}`.trim();
   return name || fallback;

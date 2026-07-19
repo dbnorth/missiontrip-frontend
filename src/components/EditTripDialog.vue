@@ -4,12 +4,13 @@ import TripServices from "../services/tripServices.js";
 import OrganizationServices from "../services/organizationServices.js";
 import WorkerRoleServices from "../services/workerRoleServices.js";
 import TripWorkerRoleServices from "../services/tripWorkerRoleServices.js";
+import TripTravelOptionServices from "../services/tripTravelOptionServices.js";
 import Utils from "../config/utils.js";
 import { useVersionConflictForm } from "../utils/useVersionConflictForm.js";
 import { useTripLeaderPicker } from "../utils/useTripLeaderPicker.js";
 import MoneyInput from "./MoneyInput.vue";
 import CountrySelect from "./CountrySelect.vue";
-import { parseMoneyAmount } from "../utils/moneyUtils.js";
+import { parseMoneyAmount, formatMoneyDisplay } from "../utils/moneyUtils.js";
 import { resolveCountryCode } from "../utils/locationData.js";
 
 const props = defineProps({
@@ -58,6 +59,14 @@ const initialRoleIds = ref([]);
 const addRoleId = ref(null);
 const addQuantity = ref(1);
 const rolesError = ref("");
+
+const travelOptions = ref([]);
+const initialTravelOptionIds = ref([]);
+const addTravelDescription = ref("");
+const addTravelPriceAdjustment = ref("");
+const addTravelSetNumber = ref(1);
+const travelOptionsError = ref("");
+let travelOptionTempId = 0;
 
 const currentImageUrl = computed(() => TripServices.getImageUrl(form.value.image));
 
@@ -128,6 +137,15 @@ const resetRoles = () => {
   addQuantity.value = 1;
   rolesError.value = "";
   workerRoles.value = [];
+};
+
+const resetTravelOptions = () => {
+  travelOptions.value = [];
+  initialTravelOptionIds.value = [];
+  addTravelDescription.value = "";
+  addTravelPriceAdjustment.value = "";
+  addTravelSetNumber.value = 1;
+  travelOptionsError.value = "";
 };
 
 const mapTripRoleRow = (row) => ({
@@ -228,6 +246,107 @@ const syncTripRoles = async (tripId) => {
   ]);
 };
 
+const mapTravelOptionRow = (row) => ({
+  id: row.id,
+  localKey: row.id != null ? `saved-${row.id}` : `new-${++travelOptionTempId}`,
+  description: row.description || "",
+  priceAdjustment:
+    row.priceAdjustment != null && row.priceAdjustment !== ""
+      ? String(row.priceAdjustment)
+      : "0",
+  setNumber: Number(row.setNumber) > 0 ? Number(row.setNumber) : 1,
+  originalDescription: row.description || "",
+  originalPriceAdjustment:
+    row.priceAdjustment != null ? Number(row.priceAdjustment) : 0,
+  originalSetNumber: Number(row.setNumber) > 0 ? Number(row.setNumber) : 1,
+});
+
+const loadTravelOptions = async (tripId) => {
+  const res = await TripTravelOptionServices.getAll(tripId);
+  const rows = (res.data || []).map(mapTravelOptionRow);
+  travelOptions.value = rows;
+  initialTravelOptionIds.value = rows.filter((r) => r.id != null).map((r) => r.id);
+};
+
+const addTravelOption = () => {
+  const description = addTravelDescription.value.trim();
+  if (!description) {
+    travelOptionsError.value = "Enter a travel option description.";
+    return;
+  }
+  const priceAdjustment = parseMoneyAmount(addTravelPriceAdjustment.value, {
+    allowNegative: true,
+  });
+  if (priceAdjustment == null) {
+    travelOptionsError.value = "Enter a valid price adjustment amount.";
+    return;
+  }
+  const setNumber = Number(addTravelSetNumber.value);
+  if (!Number.isInteger(setNumber) || setNumber < 1) {
+    travelOptionsError.value = "Set number must be a positive whole number.";
+    return;
+  }
+  travelOptionsError.value = "";
+  travelOptions.value.push({
+    id: null,
+    localKey: `new-${++travelOptionTempId}`,
+    description,
+    priceAdjustment: String(priceAdjustment),
+    setNumber,
+    originalDescription: null,
+    originalPriceAdjustment: null,
+    originalSetNumber: null,
+  });
+  addTravelDescription.value = "";
+  addTravelPriceAdjustment.value = "";
+  addTravelSetNumber.value = 1;
+};
+
+const removeTravelOption = (localKey) => {
+  travelOptions.value = travelOptions.value.filter((r) => r.localKey !== localKey);
+};
+
+const formatAdjustment = (value) =>
+  formatMoneyDisplay(value, { allowNegative: true }) || "$0.00";
+
+const syncTripTravelOptions = async (tripId) => {
+  const currentIds = new Set(
+    travelOptions.value.filter((r) => r.id != null).map((r) => Number(r.id))
+  );
+  const toDelete = initialTravelOptionIds.value.filter((id) => !currentIds.has(Number(id)));
+
+  await Promise.all([
+    ...toDelete.map((id) => TripTravelOptionServices.delete(id)),
+    ...travelOptions.value
+      .filter((r) => r.id == null)
+      .map((r) =>
+        TripTravelOptionServices.create({
+          tripId: Number(tripId),
+          description: r.description.trim(),
+          priceAdjustment: parseMoneyAmount(r.priceAdjustment, { allowNegative: true }),
+          setNumber: Number(r.setNumber),
+        })
+      ),
+    ...travelOptions.value
+      .filter((r) => {
+        if (r.id == null) return false;
+        const amount = parseMoneyAmount(r.priceAdjustment, { allowNegative: true });
+        return (
+          r.description.trim() !== (r.originalDescription || "") ||
+          Number(amount) !== Number(r.originalPriceAdjustment) ||
+          Number(r.setNumber) !== Number(r.originalSetNumber)
+        );
+      })
+      .map((r) =>
+        TripTravelOptionServices.update(r.id, {
+          description: r.description.trim(),
+          priceAdjustment: parseMoneyAmount(r.priceAdjustment, { allowNegative: true }),
+          setNumber: Number(r.setNumber),
+        })
+      ),
+  ]);
+};
+
 const applyTripData = (data) => {
   form.value = {
     ...emptyForm(),
@@ -246,6 +365,7 @@ const loadTrip = async ({ afterConflict = false } = {}) => {
   loading.value = true;
   onLoadStart({ afterConflict });
   resetRoles();
+  resetTravelOptions();
 
   try {
     if (isSystemAdmin.value) {
@@ -259,6 +379,7 @@ const loadTrip = async ({ afterConflict = false } = {}) => {
       loadLeaderOptions(form.value.orgId),
       loadWorkerRoles(form.value.orgId),
       loadTripRoles(props.tripId),
+      loadTravelOptions(props.tripId),
     ]);
     onLoadSuccess({ afterConflict });
   } catch (e) {
@@ -275,6 +396,7 @@ watch(
     if (!open) {
       resetLeaders();
       resetRoles();
+      resetTravelOptions();
       clearImageSelection();
     }
   }
@@ -313,6 +435,21 @@ const save = async () => {
       return;
     }
   }
+  for (const row of travelOptions.value) {
+    if (!row.description?.trim()) {
+      formError.value = "Each travel option needs a description.";
+      return;
+    }
+    if (parseMoneyAmount(row.priceAdjustment, { allowNegative: true }) == null) {
+      formError.value = "Each travel option needs a valid price adjustment.";
+      return;
+    }
+    const setNumber = Number(row.setNumber);
+    if (!Number.isInteger(setNumber) || setNumber < 1) {
+      formError.value = "Each travel option needs a positive set number.";
+      return;
+    }
+  }
 
   saving.value = true;
   prepareSave();
@@ -345,6 +482,15 @@ const save = async () => {
       formError.value =
         roleErr.response?.data?.message ||
         "Trip was saved, but some team roles could not be updated. You can edit them on the trip page.";
+      emit("saved");
+      return;
+    }
+    try {
+      await syncTripTravelOptions(form.value.id);
+    } catch (travelErr) {
+      formError.value =
+        travelErr.response?.data?.message ||
+        "Trip was saved, but some travel options could not be updated.";
       emit("saved");
       return;
     }
@@ -589,6 +735,110 @@ const save = async () => {
 
             <v-alert v-if="rolesError" type="error" density="compact" class="mt-2">
               {{ rolesError }}
+            </v-alert>
+          </div>
+
+          <div class="mt-4">
+            <div class="text-subtitle-2 mb-2">Travel options</div>
+
+            <v-table v-if="travelOptions.length" density="compact" class="mb-3">
+              <thead>
+                <tr>
+                  <th style="width: 100px">Set #</th>
+                  <th>Description</th>
+                  <th style="width: 160px">Price adjustment</th>
+                  <th style="width: 90px"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="row in travelOptions" :key="row.localKey">
+                  <td>
+                    <v-text-field
+                      v-model.number="row.setNumber"
+                      type="number"
+                      min="1"
+                      density="compact"
+                      hide-details
+                    />
+                  </td>
+                  <td>
+                    <v-text-field
+                      v-model="row.description"
+                      density="compact"
+                      hide-details
+                      autocomplete="off"
+                    />
+                  </td>
+                  <td>
+                    <MoneyInput
+                      v-model="row.priceAdjustment"
+                      label=""
+                      allow-negative
+                      hide-details
+                    />
+                  </td>
+                  <td>
+                    <v-btn
+                      size="small"
+                      variant="text"
+                      color="error"
+                      @click="removeTravelOption(row.localKey)"
+                    >
+                      Remove
+                    </v-btn>
+                  </td>
+                </tr>
+              </tbody>
+            </v-table>
+
+            <p v-else class="text-body-2 text-medium-emphasis mb-3">
+              Optional — add travel options that adjust the trip price.
+            </p>
+
+            <div class="add-role-form pa-4 rounded mb-2">
+              <div class="text-subtitle-2 mb-3">Add travel option</div>
+              <div class="d-flex align-center ga-3 flex-wrap">
+                <v-text-field
+                  v-model.number="addTravelSetNumber"
+                  type="number"
+                  min="1"
+                  label="Set #"
+                  density="compact"
+                  hide-details
+                  style="max-width: 100px"
+                />
+                <v-text-field
+                  v-model="addTravelDescription"
+                  label="Description"
+                  density="compact"
+                  hide-details
+                  autocomplete="off"
+                  style="min-width: 220px; flex: 1"
+                />
+                <MoneyInput
+                  v-model="addTravelPriceAdjustment"
+                  label="Price adjustment"
+                  allow-negative
+                  hide-details
+                  style="max-width: 160px"
+                />
+                <v-btn
+                  color="primary"
+                  size="small"
+                  :disabled="!addTravelDescription.trim()"
+                  @click="addTravelOption"
+                >
+                  Add option
+                </v-btn>
+              </div>
+              <div class="text-caption text-medium-emphasis mt-2">
+                Options with the same set number belong together. Use a positive amount to
+                increase cost, or negative to decrease (e.g. {{ formatAdjustment(-50) }}).
+              </div>
+            </div>
+
+            <v-alert v-if="travelOptionsError" type="error" density="compact" class="mt-2">
+              {{ travelOptionsError }}
             </v-alert>
           </div>
 

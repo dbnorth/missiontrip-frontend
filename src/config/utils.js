@@ -168,10 +168,21 @@ export default class Utils {
   static isTripParticipantUser = (user) =>
     (user?.tripRoles || []).some((r) => r.roleName === "Trip Participant");
 
+  static isTripApplicantUser = (user) =>
+    (user?.tripRoles || []).some((r) => r.roleName === "Trip Applicant");
+
+  /** Browse/apply/update application — any signed-in non–system-admin user. */
+  static canBrowseAndApplyToTrips = (user) =>
+    !!user && !Utils.isSystemAdmin(user);
+
   static showParticipantOrPendingProfile = (user) => {
     if (!user || Utils.isSystemAdmin(user)) return false;
     const hasOrgAdmin = (user.orgRoles || []).some((r) => r.roleName === "Org Admin");
     if (hasOrgAdmin) return false;
-    return Utils.isPendingUser(user) || Utils.isTripParticipantUser(user);
+    return (
+      Utils.isPendingUser(user) ||
+      Utils.isTripParticipantUser(user) ||
+      Utils.isTripApplicantUser(user)
+    );
   };
 }
