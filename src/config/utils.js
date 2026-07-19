@@ -32,23 +32,22 @@ export default class Utils {
       if (user.actingOrganizationId === null || user.actingOrganizationId === "") return null;
       return user.actingOrganizationId ?? user.currentOrgId ?? null;
     }
-    const selectable = Utils.getSelectableOrgs(user);
-    if (selectable.length) {
-      const current = user.currentOrgId;
-      if (current != null && selectable.some((org) => Number(org.orgId) === Number(current))) {
-        return Number(current);
-      }
-      return selectable[0].orgId;
+    if (user.currentOrgId != null && user.currentOrgId !== "") {
+      return Number(user.currentOrgId);
     }
-    return user.currentOrgId ?? user.orgRoles?.[0]?.orgId ?? user.tripRoles?.[0]?.orgId ?? null;
+    const roleOrgs = Utils.getRoleOrgs(user);
+    if (roleOrgs.length) return roleOrgs[0].orgId;
+    return null;
   };
 
-  static getSelectableOrgs = (user) => {
+  /** Organizations where the user has any org or trip role, sorted by name. */
+  static getRoleOrgs = (user) => {
     if (!user || Utils.isSystemAdmin(user)) return [];
     const byId = new Map();
     for (const role of user.orgRoles || []) {
-      if (role.roleName !== "Org Admin" || role.orgId == null) continue;
+      if (role.orgId == null) continue;
       const orgId = Number(role.orgId);
+      if (byId.has(orgId)) continue;
       byId.set(orgId, {
         orgId,
         orgName: role.orgName,
@@ -57,7 +56,7 @@ export default class Utils {
       });
     }
     for (const role of user.tripRoles || []) {
-      if (role.roleName !== "Trip Leader" || role.orgId == null) continue;
+      if (role.orgId == null) continue;
       const orgId = Number(role.orgId);
       if (byId.has(orgId)) continue;
       byId.set(orgId, {
@@ -69,6 +68,9 @@ export default class Utils {
     }
     return [...byId.values()].sort((a, b) => (a.orgName || "").localeCompare(b.orgName || ""));
   };
+
+  /** @deprecated Prefer getRoleOrgs; kept for callers that previously scoped to admin/leader orgs. */
+  static getSelectableOrgs = (user) => Utils.getRoleOrgs(user);
 
   static isOrgAdmin = (user, orgId) => {
     if (Utils.isSystemAdmin(user)) return true;
@@ -105,7 +107,7 @@ export default class Utils {
   static showOrgScopeNotice = (user) => {
     if (!user) return false;
     if (Utils.isSystemAdmin(user)) return true;
-    return Utils.getSelectableOrgs(user).length > 1;
+    return Utils.getRoleOrgs(user).length > 1;
   };
 
   static orgDisplayName = (user, orgId) => {
@@ -122,7 +124,7 @@ export default class Utils {
     if (fromOrgRole) return fromOrgRole;
     const fromTripRole = (user.tripRoles || []).find((r) => Number(r.orgId) === id)?.orgName;
     if (fromTripRole) return fromTripRole;
-    const selectable = Utils.getSelectableOrgs(user);
+    const selectable = Utils.getRoleOrgs(user);
     const match = selectable.find((org) => Number(org.orgId) === id);
     return match?.orgName || null;
   };
@@ -143,13 +145,44 @@ export default class Utils {
   static currentOrg = (user) => {
     const orgId = Utils.effectiveOrgId(user);
     if (!orgId) return null;
-    const selectable = Utils.getSelectableOrgs(user);
-    const match = selectable.find((org) => Number(org.orgId) === Number(orgId));
+    const roleOrgs = Utils.getRoleOrgs(user);
+    const match = roleOrgs.find((org) => Number(org.orgId) === Number(orgId));
     if (match) return match;
     const fromRole = (user?.orgRoles || []).find((r) => Number(r.orgId) === Number(orgId));
-    if (fromRole) return fromRole;
+    if (fromRole) {
+      return {
+        orgId: Number(orgId),
+        orgName: fromRole.orgName,
+        logo: fromRole.logo,
+        colorFamily: fromRole.colorFamily,
+      };
+    }
     const name = Utils.orgDisplayName(user, orgId);
     if (name) return { orgId: Number(orgId), orgName: name };
-    return null;
+    return { orgId: Number(orgId), orgName: user.currentOrgName || null };
+  };
+
+  static isPendingUser = (user) =>
+    (user?.orgRoles || []).some((r) => r.roleName === "Pending User");
+
+  static isTripParticipantUser = (user) =>
+    (user?.tripRoles || []).some((r) => r.roleName === "Trip Participant");
+
+  static isTripApplicantUser = (user) =>
+    (user?.tripRoles || []).some((r) => r.roleName === "Trip Applicant");
+
+  /** Browse/apply/update application — any signed-in non–system-admin user. */
+  static canBrowseAndApplyToTrips = (user) =>
+    !!user && !Utils.isSystemAdmin(user);
+
+  static showParticipantOrPendingProfile = (user) => {
+    if (!user || Utils.isSystemAdmin(user)) return false;
+    const hasOrgAdmin = (user.orgRoles || []).some((r) => r.roleName === "Org Admin");
+    if (hasOrgAdmin) return false;
+    return (
+      Utils.isPendingUser(user) ||
+      Utils.isTripParticipantUser(user) ||
+      Utils.isTripApplicantUser(user)
+    );
   };
 }

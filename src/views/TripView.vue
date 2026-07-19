@@ -8,6 +8,7 @@ import AddTripParticipantDialog from "../components/AddTripParticipantDialog.vue
 import EditTripParticipantDialog from "../components/EditTripParticipantDialog.vue";
 import ParticipantDonationsDialog from "../components/ParticipantDonationsDialog.vue";
 import EditTripDialog from "../components/EditTripDialog.vue";
+import TripWorkerRolesCard from "../components/TripWorkerRolesCard.vue";
 import { formatMoneyDisplay } from "../utils/moneyUtils.js";
 import { countryName } from "../utils/locationData.js";
 import { donorTripPath, donorParticipantPath } from "../utils/donateUrls.js";
@@ -28,6 +29,11 @@ const editParticipant = ref(null);
 const showEditTrip = ref(false);
 const showDonations = ref(false);
 const donationsParticipant = ref(null);
+const teamRolesRefreshKey = ref(0);
+
+const bumpTeamRoles = () => {
+  teamRolesRefreshKey.value += 1;
+};
 
 const donorLink = computed(() => (trip.value ? donorTripPath(trip.value) : null));
 
@@ -96,11 +102,13 @@ const openEdit = (row) => {
 const onParticipantAdded = () => {
   message.value = "Participant added.";
   loadParticipants();
+  bumpTeamRoles();
 };
 
 const onParticipantUpdated = () => {
   message.value = "Participant updated.";
   loadParticipants();
+  bumpTeamRoles();
 };
 
 const formatDonationTotal = (row) => formatMoneyDisplay(row.donationTotal ?? 0) || "$0.00";
@@ -114,6 +122,10 @@ const rowParticipantCost = (row) =>
 const onDonationsChanged = () => {
   loadParticipants();
   loadDonations();
+};
+
+const onTeamRolesChanged = () => {
+  loadParticipants();
 };
 
 const onTripUpdated = () => {
@@ -185,6 +197,14 @@ onMounted(refresh);
       </v-row>
     </v-card>
 
+    <TripWorkerRolesCard
+      v-if="trip"
+      :trip-id="tripId"
+      :org-id="trip.orgId"
+      :refresh-key="teamRolesRefreshKey"
+      @changed="onTeamRolesChanged"
+    />
+
     <div class="d-flex align-center justify-space-between mb-3">
       <h2 class="text-h6">Participants</h2>
       <v-btn color="primary" size="small" :disabled="!trip" @click="showAddParticipant = true">
@@ -198,6 +218,7 @@ onMounted(refresh);
       :headers="[
         { title: 'Name', key: 'name' },
         { title: 'Role', key: 'role' },
+        { title: 'Worker role', key: 'workerRole' },
         { title: 'Status', key: 'status' },
         { title: 'Participant cost', key: 'participantCost' },
         { title: 'Total donations', key: 'donationTotal' },
@@ -215,6 +236,9 @@ onMounted(refresh);
         </div>
       </template>
       <template #item.role="{ item }">{{ item.role?.roleName || "—" }}</template>
+      <template #item.workerRole="{ item }">
+        {{ item.tripWorkerRole?.workerRole?.name || "—" }}
+      </template>
       <template #item.participantCost="{ item }">{{ rowParticipantCost(item) }}</template>
       <template #item.donationTotal="{ item }">{{ formatDonationTotal(item) }}</template>
       <template #item.whygoText="{ item }">{{ item.whygoText || "—" }}</template>

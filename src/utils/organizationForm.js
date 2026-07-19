@@ -17,6 +17,8 @@ export const emptyOrganizationForm = () => ({
   websiteUrl: "",
   facebookPage: "",
   instagram: "",
+  logo: null,
+  agreementFileName: null,
   colorFamily: "blue",
   version: 0,
 });

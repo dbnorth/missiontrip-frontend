@@ -11,6 +11,7 @@ import Utils from "../config/utils.js";
 import { formatMoneyDisplay } from "../utils/moneyUtils.js";
 import { countryName } from "../utils/locationData.js";
 import { donorTripPath } from "../utils/donateUrls.js";
+import { tripParticipantStatusLabel } from "../utils/tripParticipantStatus.js";
 
 const route = useRoute();
 const user = ref(null);
@@ -272,6 +273,7 @@ onUnmounted(() => {
       :headers="[
         { title: 'Name', key: 'name' },
         { title: 'Role', key: 'role' },
+        { title: 'Worker role', key: 'workerRole' },
         { title: 'Status', key: 'status' },
         { title: 'Participant cost', key: 'participantCost' },
         { title: 'Total donations', key: 'donationTotal' },
@@ -282,6 +284,10 @@ onUnmounted(() => {
     >
       <template #item.name="{ item }">{{ participantName(item) }}</template>
       <template #item.role="{ item }">{{ item.role?.roleName || "—" }}</template>
+      <template #item.workerRole="{ item }">
+        {{ item.tripWorkerRole?.workerRole?.name || "—" }}
+      </template>
+      <template #item.status="{ item }">{{ tripParticipantStatusLabel(item.status) }}</template>
       <template #item.participantCost="{ item }">{{ rowParticipantCost(item) }}</template>
       <template #item.donationTotal="{ item }">{{ formatDonationTotal(item) }}</template>
       <template #item.whygoText="{ item }">{{ item.whygoText || "—" }}</template>

@@ -19,11 +19,12 @@ const formError = ref("");
 const loading = ref(false);
 
 const storeUserAndGoHome = (data, { fromRegistration = false } = {}) => {
+  const roleOrgs = Utils.getRoleOrgs(data);
   const activeOrg = (data.orgRoles || []).find((r) => r.roleName === "Org Admin");
-  const selectableOrgs = Utils.getSelectableOrgs(data);
   const user = {
     ...data,
-    currentOrgId: activeOrg?.orgId ?? selectableOrgs[0]?.orgId ?? null,
+    currentOrgId: activeOrg?.orgId ?? roleOrgs[0]?.orgId ?? null,
+    currentOrgName: activeOrg?.orgName ?? roleOrgs[0]?.orgName ?? null,
     currentTripId: data.tripRoles?.[0]?.tripId ?? null,
     fromRegistration,
   };

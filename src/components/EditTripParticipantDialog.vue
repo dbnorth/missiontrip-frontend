@@ -2,8 +2,10 @@
 import { ref, computed, watch } from "vue";
 import TripServices from "../services/tripServices.js";
 import TripPeopleRoleServices from "../services/tripPeopleRoleServices.js";
+import TripWorkerRoleServices from "../services/tripWorkerRoleServices.js";
 import MoneyInput from "./MoneyInput.vue";
 import { formatMoneyDisplay, parseMoneyAmount } from "../utils/moneyUtils.js";
+import { TRIP_PARTICIPANT_STATUS_OPTIONS } from "../utils/tripParticipantStatus.js";
 import { useVersionConflictForm } from "../utils/useVersionConflictForm.js";
 
 const props = defineProps({
@@ -14,12 +16,16 @@ const props = defineProps({
 const emit = defineEmits(["update:modelValue", "saved"]);
 
 const tripDefaultCost = ref(null);
+const tripWorkerRoles = ref([]);
 const saving = ref(false);
 const { formError, formNotice, prepareSave, onLoadStart, onLoadSuccess, handleSaveError } =
   useVersionConflictForm();
 
+const statusItems = TRIP_PARTICIPANT_STATUS_OPTIONS;
+
 const form = ref({
-  status: "active",
+  status: "incomplete",
+  tripWorkerRoleId: null,
   participantCost: "",
   whygoText: "",
   version: 0,
@@ -31,10 +37,17 @@ const participantName = computed(() => {
   return `${p.firstName || ""} ${p.lastName || ""}`.trim() || "Participant";
 });
 
+const tripWorkerRoleLabel = (row) => {
+  const name = row.workerRole?.name || "Worker role";
+  const qty = row.quantity != null ? ` (need ${row.quantity})` : "";
+  return `${name}${qty}`;
+};
+
 const applyParticipant = (row) => {
   if (!row) return;
   form.value = {
-    status: row.status || "active",
+    status: row.status || "incomplete",
+    tripWorkerRoleId: row.tripWorkerRoleId ?? null,
     participantCost: row.participantCost != null ? String(row.participantCost) : "",
     whygoText: row.whygoText || "",
     version: row.version ?? 0,
@@ -54,9 +67,23 @@ const loadTripDefault = async (tripId) => {
   }
 };
 
+const loadTripWorkerRoles = async (tripId) => {
+  if (!tripId) {
+    tripWorkerRoles.value = [];
+    return;
+  }
+  try {
+    const res = await TripWorkerRoleServices.getAll(tripId);
+    tripWorkerRoles.value = res.data || [];
+  } catch {
+    tripWorkerRoles.value = [];
+  }
+};
+
 const load = async ({ afterConflict = false } = {}) => {
   onLoadStart({ afterConflict });
-  await loadTripDefault(props.participant?.tripId);
+  const tripId = props.participant?.tripId;
+  await Promise.all([loadTripDefault(tripId), loadTripWorkerRoles(tripId)]);
   applyParticipant(props.participant);
   onLoadSuccess({ afterConflict });
 };
@@ -85,6 +112,7 @@ const save = async () => {
 
   const payload = {
     status: form.value.status,
+    tripWorkerRoleId: form.value.tripWorkerRoleId ? Number(form.value.tripWorkerRoleId) : null,
     whygoText: form.value.whygoText?.trim() || null,
     version: form.value.version,
   };
@@ -116,8 +144,21 @@ const save = async () => {
       <v-card-subtitle class="px-4 pb-2">{{ participantName }}</v-card-subtitle>
       <v-card-text>
         <v-select
+          v-model="form.tripWorkerRoleId"
+          :items="tripWorkerRoles"
+          :item-title="tripWorkerRoleLabel"
+          item-value="id"
+          label="Trip worker role"
+          density="compact"
+          clearable
+          :hint="tripWorkerRoles.length ? undefined : 'Add roles under Team roles needed first'"
+          :persistent-hint="!tripWorkerRoles.length"
+        />
+        <v-select
           v-model="form.status"
-          :items="['active', 'inactive']"
+          :items="statusItems"
+          item-title="title"
+          item-value="value"
           label="Status"
           density="compact"
         />
