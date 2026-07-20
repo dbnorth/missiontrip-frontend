@@ -10,6 +10,9 @@ export default {
   getBrowseTrips(orgId) {
     return apiClient.get("/trips/browse", { params: { orgId } });
   },
+  getMyBrowseTrips(orgId) {
+    return apiClient.get("/trips/browse/mine", { params: { orgId } });
+  },
   getBrowseTrip(id) {
     return apiClient.get(`/trips/browse/${id}`);
   },

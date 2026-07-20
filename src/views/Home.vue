@@ -10,9 +10,7 @@ import AuthServices from "../services/authServices.js";
 import EditPersonDialog from "../components/EditPersonDialog.vue";
 import ApplyTripDialog from "../components/ApplyTripDialog.vue";
 import {
-  getMissingProfileFields,
   isProfileComplete,
-  personDisplayName,
 } from "../utils/personProfile.js";
 import { tripParticipantStatusLabel, tripParticipantStatusColor } from "../utils/tripParticipantStatus.js";
 import { useRouter } from "vue-router";
@@ -33,8 +31,33 @@ const resolvedOrgName = ref(null);
 const browseOrgs = ref([]);
 const browseOrgId = ref(null);
 const browseTrips = ref([]);
+const myTrips = ref([]);
+const showAllMyTrips = ref(false);
 const browseTripsLoading = ref(false);
 const browseMessage = ref("");
+
+const todayDateOnly = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+const isFutureOrCurrentStart = (trip) => {
+  if (!trip?.startDate) return false;
+  return String(trip.startDate) >= todayDateOnly();
+};
+
+const displayMyTrips = computed(() => {
+  const list = myTrips.value || [];
+  if (showAllMyTrips.value) return list;
+  return list.filter(isFutureOrCurrentStart);
+});
+
+const availableTrips = computed(() =>
+  (browseTrips.value || []).filter((trip) => !trip.alreadyApplied && isFutureOrCurrentStart(trip))
+);
 
 const effectiveOrgId = computed(() => Utils.effectiveOrgId(user.value));
 
@@ -94,13 +117,7 @@ const showProfileSection = computed(() => Utils.showParticipantOrPendingProfile(
 // Any non-admin signed-in user can browse/apply to active trips.
 const showTripBrowseSection = computed(() => Utils.canBrowseAndApplyToTrips(user.value));
 
-const profileName = computed(() =>
-  personDisplayName(person.value, `${user.value?.firstName || ""} ${user.value?.lastName || ""}`.trim() || "Your profile")
-);
-
 const profileComplete = computed(() => isProfileComplete(person.value));
-
-const missingProfileFields = computed(() => getMissingProfileFields(person.value));
 
 const browseOrgItems = computed(() =>
   browseOrgs.value.map((org) => ({ title: org.name, value: Number(org.id) }))
@@ -124,16 +141,22 @@ const defaultBrowseOrgId = () => {
 const loadBrowseTrips = async () => {
   if (!showTripBrowseSection.value || !browseOrgId.value) {
     browseTrips.value = [];
+    myTrips.value = [];
     return;
   }
   browseTripsLoading.value = true;
   browseMessage.value = "";
   try {
-    const res = await TripServices.getBrowseTrips(browseOrgId.value);
-    browseTrips.value = res.data || [];
+    const [browseRes, myRes] = await Promise.all([
+      TripServices.getBrowseTrips(browseOrgId.value),
+      TripServices.getMyBrowseTrips(browseOrgId.value),
+    ]);
+    browseTrips.value = browseRes.data || [];
+    myTrips.value = myRes.data || [];
   } catch (e) {
     browseMessage.value = e.response?.data?.message || "Unable to load trips.";
     browseTrips.value = [];
+    myTrips.value = [];
   } finally {
     browseTripsLoading.value = false;
   }
@@ -144,6 +167,7 @@ const loadBrowseOrgs = async () => {
     browseOrgs.value = [];
     browseOrgId.value = null;
     browseTrips.value = [];
+    myTrips.value = [];
     return;
   }
   try {
@@ -152,11 +176,15 @@ const loadBrowseOrgs = async () => {
     const nextOrgId = defaultBrowseOrgId();
     browseOrgId.value = nextOrgId;
     if (nextOrgId) await loadBrowseTrips();
-    else browseTrips.value = [];
+    else {
+      browseTrips.value = [];
+      myTrips.value = [];
+    }
   } catch {
     browseOrgs.value = [];
     browseOrgId.value = null;
     browseTrips.value = [];
+    myTrips.value = [];
   }
 };
 
@@ -364,45 +392,38 @@ onUnmounted(() => {
   <v-container>
     <v-row>
       <v-col cols="12">
-        <v-card v-if="showProfileSection" class="mb-6 pa-4" variant="tonal">
-          <div class="d-flex align-center justify-space-between flex-wrap ga-3 mb-2">
-            <h2 class="text-h6 mb-0">{{ profileName }}</h2>
-            <v-btn
-              v-if="!profileComplete"
-              color="primary"
-              size="small"
-              :disabled="!user?.personId"
-              @click="showProfileDialog = true"
-            >
-              Complete profile
+        <v-alert
+          v-if="showProfileSection && !profileLoading && user?.personId && !profileComplete"
+          type="warning"
+          variant="tonal"
+          density="compact"
+          class="mb-6"
+        >
+          <div class="d-flex align-center justify-space-between flex-wrap ga-3">
+            <span>Please update your profile to continue.</span>
+            <v-btn color="primary" size="small" @click="showProfileDialog = true">
+              Update profile
             </v-btn>
           </div>
+        </v-alert>
 
-          <v-progress-linear v-if="profileLoading" indeterminate class="mb-3" />
+        <v-alert
+          v-else-if="showProfileSection && !profileLoading && !user?.personId"
+          type="warning"
+          density="compact"
+          class="mb-6"
+        >
+          Your account is not linked to a person record yet. Please contact your organization.
+        </v-alert>
 
-          <v-alert
-            v-else-if="profileComplete"
-            type="success"
-            variant="tonal"
-            density="compact"
-          >
-            Profile complete.
-          </v-alert>
-
-          <template v-else-if="user?.personId">
-            <p class="text-body-2 mb-2">Complete your profile by filling in the missing fields below.</p>
-            <ul v-if="missingProfileFields.length" class="text-body-2 mb-0">
-              <li v-for="field in missingProfileFields" :key="field">{{ field }}</li>
-            </ul>
-          </template>
-
-          <v-alert v-else type="warning" density="compact">
-            Your account is not linked to a person record yet. Please contact your organization.
-          </v-alert>
-        </v-card>
+        <v-progress-linear
+          v-if="showProfileSection && profileLoading"
+          indeterminate
+          class="mb-6"
+        />
 
         <v-card v-if="showTripBrowseSection" class="mb-6 pa-4">
-          <h2 class="text-h6 mb-3">Active trips</h2>
+          <h2 class="text-h6 mb-3">Trips</h2>
           <v-select
             v-model="browseOrgId"
             :items="browseOrgItems"
@@ -427,70 +448,112 @@ onUnmounted(() => {
           >
             No organizations are available to browse yet.
           </v-alert>
-          <v-alert
-            v-else-if="!browseTrips.length"
-            type="info"
-            density="compact"
-            class="mb-0"
-          >
-            No active trips for this organization.
-          </v-alert>
 
-          <v-table v-else density="compact">
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Location</th>
-                <th>Start</th>
-                <th>End</th>
-                <th>Status</th>
-                <th class="text-right" style="min-width: 180px">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in browseTrips" :key="item.id">
-                <td>{{ item.name }}</td>
-                <td>{{ item.location || "—" }}</td>
-                <td>{{ formatDate(item.startDate) }}</td>
-                <td>{{ formatDate(item.endDate) }}</td>
-                <td>
-                  <v-chip
-                    v-if="item.alreadyApplied"
-                    size="small"
-                    variant="tonal"
-                    :color="tripParticipantStatusColor(item.applicationStatus)"
-                  >
-                    {{ tripParticipantStatusLabel(item.applicationStatus) }}
-                  </v-chip>
-                  <span v-else class="text-medium-emphasis">—</span>
-                </td>
-                <td class="text-right">
-                  <div class="d-flex justify-end ga-2 flex-wrap">
-                    <v-btn size="small" variant="tonal" @click="viewBrowseTrip(item)">View</v-btn>
-                    <v-btn
-                      v-if="!item.alreadyApplied"
+          <template v-else>
+            <div class="d-flex align-center justify-space-between flex-wrap ga-2 mb-2">
+              <h3 class="text-subtitle-1 font-weight-bold mb-0">My Trips</h3>
+              <v-checkbox
+                v-model="showAllMyTrips"
+                label="Show all my trips"
+                density="compact"
+                hide-details
+                class="mt-0"
+              />
+            </div>
+            <v-alert
+              v-if="!displayMyTrips.length"
+              type="info"
+              density="compact"
+              class="mb-4"
+            >
+              {{
+                showAllMyTrips
+                  ? "You are not on any trips for this organization."
+                  : "You have no upcoming trips. Check “Show all my trips” to include past trips."
+              }}
+            </v-alert>
+            <v-table v-else density="compact" class="mb-6">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Location</th>
+                  <th>Start</th>
+                  <th>End</th>
+                  <th>Status</th>
+                  <th class="text-right" style="min-width: 180px">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in displayMyTrips" :key="`my-${item.id}`">
+                  <td>{{ item.name }}</td>
+                  <td>{{ item.location || "—" }}</td>
+                  <td>{{ formatDate(item.startDate) }}</td>
+                  <td>{{ formatDate(item.endDate) }}</td>
+                  <td>
+                    <v-chip
                       size="small"
-                      color="primary"
-                      @click="openApplyDialog(item)"
+                      variant="tonal"
+                      :color="tripParticipantStatusColor(item.applicationStatus)"
                     >
-                      Apply
-                    </v-btn>
-                    <v-btn
-                      v-else-if="canUpdateApplication(item)"
-                      size="small"
-                      color="primary"
-                      @click="openUpdateApplication(item)"
-                    >
-                      Update App
-                    </v-btn>
-                  </div>
-                </td>
-              </tr>
-            </tbody>
-          </v-table>
+                      {{ tripParticipantStatusLabel(item.applicationStatus) }}
+                    </v-chip>
+                  </td>
+                  <td class="text-right">
+                    <div class="d-flex justify-end ga-2 flex-wrap">
+                      <v-btn size="small" variant="tonal" @click="viewBrowseTrip(item)">View</v-btn>
+                      <v-btn
+                        v-if="canUpdateApplication(item)"
+                        size="small"
+                        color="primary"
+                        @click="openUpdateApplication(item)"
+                      >
+                        Update App
+                      </v-btn>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </v-table>
+
+            <h3 class="text-subtitle-1 font-weight-bold mb-2">Trips you can apply for</h3>
+            <v-alert
+              v-if="!availableTrips.length"
+              type="info"
+              density="compact"
+              class="mb-0"
+            >
+              No upcoming trips available to apply for in this organization.
+            </v-alert>
+            <v-table v-else density="compact">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Location</th>
+                  <th>Start</th>
+                  <th>End</th>
+                  <th class="text-right" style="min-width: 180px">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in availableTrips" :key="`avail-${item.id}`">
+                  <td>{{ item.name }}</td>
+                  <td>{{ item.location || "—" }}</td>
+                  <td>{{ formatDate(item.startDate) }}</td>
+                  <td>{{ formatDate(item.endDate) }}</td>
+                  <td class="text-right">
+                    <div class="d-flex justify-end ga-2 flex-wrap">
+                      <v-btn size="small" variant="tonal" @click="viewBrowseTrip(item)">View</v-btn>
+                      <v-btn size="small" color="primary" @click="openApplyDialog(item)">
+                        Apply
+                      </v-btn>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </v-table>
+          </template>
         </v-card>
 
-        <h1 class="text-h5 mb-4">Dashboard</h1>
 
         <template v-if="isTripLeaderOnly">
           <v-alert

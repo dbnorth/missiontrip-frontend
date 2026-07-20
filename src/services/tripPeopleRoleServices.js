@@ -4,6 +4,9 @@ export default {
   getAll(tripId) {
     return apiClient.get("/trip-people-roles", { params: { tripId } });
   },
+  get(id) {
+    return apiClient.get(`/trip-people-roles/${id}`);
+  },
   create(data) {
     return apiClient.post("/trip-people-roles", data);
   },

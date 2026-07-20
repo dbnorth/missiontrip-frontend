@@ -29,11 +29,17 @@ export const PROFILE_FIELD_CHECKS = [
 export const getMissingProfileFields = (person) => {
   if (!person) return PROFILE_FIELD_CHECKS.map((field) => field.label);
 
-  return PROFILE_FIELD_CHECKS.filter((field) => {
-    const isRequired = field.required ? field.required(person) : true;
-    if (!isRequired) return false;
-    return isBlank(person[field.key]);
-  }).map((field) => field.label);
+  return PROFILE_FIELD_CHECKS.filter((field) => isProfileFieldMissing(person, field)).map(
+    (field) => field.label
+  );
+};
+
+export const isProfileFieldMissing = (person, field) => {
+  const check = typeof field === "string" ? PROFILE_FIELD_CHECKS.find((f) => f.key === field) : field;
+  if (!check) return false;
+  const isRequired = check.required ? check.required(person) : true;
+  if (!isRequired) return false;
+  return isBlank(person?.[check.key]);
 };
 
 export const isProfileComplete = (person) => getMissingProfileFields(person).length === 0;

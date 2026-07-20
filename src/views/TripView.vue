@@ -8,7 +8,10 @@ import AddTripParticipantDialog from "../components/AddTripParticipantDialog.vue
 import EditTripParticipantDialog from "../components/EditTripParticipantDialog.vue";
 import ParticipantDonationsDialog from "../components/ParticipantDonationsDialog.vue";
 import EditTripDialog from "../components/EditTripDialog.vue";
+import ViewPersonProfileDialog from "../components/ViewPersonProfileDialog.vue";
+import ViewTripApplicationDialog from "../components/ViewTripApplicationDialog.vue";
 import TripWorkerRolesCard from "../components/TripWorkerRolesCard.vue";
+import ExportServices from "../services/exportServices.js";
 import { formatMoneyDisplay } from "../utils/moneyUtils.js";
 import { countryName } from "../utils/locationData.js";
 import { donorTripPath, donorParticipantPath } from "../utils/donateUrls.js";
@@ -27,6 +30,11 @@ const showAddParticipant = ref(false);
 const showEditParticipant = ref(false);
 const editParticipant = ref(null);
 const showEditTrip = ref(false);
+const showViewProfile = ref(false);
+const viewPersonId = ref(null);
+const showViewApplication = ref(false);
+const viewApplicationId = ref(null);
+const viewApplicationMode = ref("view");
 const showDonations = ref(false);
 const donationsParticipant = ref(null);
 const teamRolesRefreshKey = ref(0);
@@ -59,6 +67,15 @@ const participantName = (row) => {
   const p = row.person;
   return p ? `${p.firstName || ""} ${p.lastName || ""}`.trim() : "—";
 };
+
+const participantItems = computed(() =>
+  (participants.value || []).map((row) => ({
+    ...row,
+    name: participantName(row),
+    roleName: row.role?.roleName || "",
+    workerRoleName: row.tripWorkerRole?.workerRole?.name || "",
+  }))
+);
 
 const participantPictureUrl = (row) => PersonServices.getPictureUrl(row?.person?.picture);
 
@@ -99,6 +116,33 @@ const openEdit = (row) => {
   showEditParticipant.value = true;
 };
 
+const openViewProfile = (row) => {
+  const id = row?.person?.id;
+  if (!id) return;
+  viewPersonId.value = id;
+  showViewProfile.value = true;
+};
+
+const applicationAction = (row) => {
+  const status = String(row?.status || "").toLowerCase();
+  if (status === "approved") return { label: "View App", mode: "view" };
+  if (status === "ready") return { label: "Approve App", mode: "approve" };
+  return { label: "Preview App", mode: "preview" };
+};
+
+const openApplication = (row) => {
+  if (!row?.id) return;
+  const action = applicationAction(row);
+  viewApplicationId.value = row.id;
+  viewApplicationMode.value = action.mode;
+  showViewApplication.value = true;
+};
+
+const onApplicationSaved = (payload) => {
+  message.value = payload?.message || "Application updated.";
+  loadParticipants();
+};
+
 const onParticipantAdded = () => {
   message.value = "Participant added.";
   loadParticipants();
@@ -131,6 +175,21 @@ const onTeamRolesChanged = () => {
 const onTripUpdated = () => {
   message.value = "Trip updated.";
   refresh();
+};
+
+const exportingCsv = ref(false);
+
+const downloadParticipantsCsv = async () => {
+  if (!tripId.value) return;
+  exportingCsv.value = true;
+  message.value = "";
+  try {
+    await ExportServices.participantsCsv(tripId.value);
+  } catch (e) {
+    message.value = e.message || "Unable to download participants CSV.";
+  } finally {
+    exportingCsv.value = false;
+  }
 };
 
 onMounted(refresh);
@@ -205,44 +264,64 @@ onMounted(refresh);
       @changed="onTeamRolesChanged"
     />
 
-    <div class="d-flex align-center justify-space-between mb-3">
-      <h2 class="text-h6">Participants</h2>
-      <v-btn color="primary" size="small" :disabled="!trip" @click="showAddParticipant = true">
-        Add participant
-      </v-btn>
+    <div class="d-flex align-center justify-space-between mb-3 flex-wrap ga-2">
+      <h2 class="text-h6 mb-0">Participants</h2>
+      <div class="d-flex align-center ga-2">
+        <v-btn
+          variant="tonal"
+          size="small"
+          :disabled="!trip || !participants.length"
+          :loading="exportingCsv"
+          @click="downloadParticipantsCsv"
+        >
+          Download CSV
+        </v-btn>
+        <v-btn color="primary" size="small" :disabled="!trip" @click="showAddParticipant = true">
+          Add participant
+        </v-btn>
+      </div>
     </div>
 
     <v-data-table
-      :items="participants"
+      :items="participantItems"
       :loading="loading"
       :headers="[
         { title: 'Name', key: 'name' },
-        { title: 'Role', key: 'role' },
-        { title: 'Worker role', key: 'workerRole' },
+        { title: 'Role', key: 'roleName' },
+        { title: 'Worker role', key: 'workerRoleName' },
         { title: 'Status', key: 'status' },
         { title: 'Participant cost', key: 'participantCost' },
         { title: 'Total donations', key: 'donationTotal' },
-        { title: 'Why go', key: 'whygoText' },
         { title: 'Actions', key: 'actions', sortable: false },
       ]"
       density="compact"
     >
       <template #item.name="{ item }">
-        <div class="d-flex align-center ga-3 py-1">
+        <button
+          type="button"
+          class="profile-link d-flex align-center ga-3 py-1 text-start"
+          :disabled="!item.person?.id"
+          @click="openViewProfile(item)"
+        >
           <v-avatar size="36" rounded="lg" class="participant-thumb flex-shrink-0">
-            <v-img v-if="participantPictureUrl(item)" :src="participantPictureUrl(item)" :alt="participantName(item)" cover />
+            <v-img
+              v-if="participantPictureUrl(item)"
+              :src="participantPictureUrl(item)"
+              :alt="item.name"
+              cover
+            />
           </v-avatar>
-          <span>{{ participantName(item) }}</span>
-        </div>
+          <span class="profile-link-text">{{ item.name }}</span>
+        </button>
       </template>
-      <template #item.role="{ item }">{{ item.role?.roleName || "—" }}</template>
-      <template #item.workerRole="{ item }">
-        {{ item.tripWorkerRole?.workerRole?.name || "—" }}
-      </template>
+      <template #item.roleName="{ item }">{{ item.roleName || "—" }}</template>
+      <template #item.workerRoleName="{ item }">{{ item.workerRoleName || "—" }}</template>
       <template #item.participantCost="{ item }">{{ rowParticipantCost(item) }}</template>
       <template #item.donationTotal="{ item }">{{ formatDonationTotal(item) }}</template>
-      <template #item.whygoText="{ item }">{{ item.whygoText || "—" }}</template>
       <template #item.actions="{ item }">
+        <v-btn size="small" variant="text" @click="openApplication(item)">
+          {{ applicationAction(item).label }}
+        </v-btn>
         <v-btn size="small" variant="text" @click="openEdit(item)">Edit</v-btn>
         <v-btn size="small" variant="text" @click="openDonations(item)">View donations</v-btn>
         <v-btn
@@ -275,11 +354,39 @@ onMounted(refresh);
       @changed="onDonationsChanged"
     />
     <EditTripDialog v-model="showEditTrip" :trip-id="tripId" @saved="onTripUpdated" />
+    <ViewPersonProfileDialog v-model="showViewProfile" :person-id="viewPersonId" />
+    <ViewTripApplicationDialog
+      v-model="showViewApplication"
+      :participant-id="viewApplicationId"
+      :mode="viewApplicationMode"
+      @saved="onApplicationSaved"
+    />
   </v-container>
 </template>
 
 <style scoped>
 .participant-thumb {
   background: rgba(0, 0, 0, 0.06);
+}
+
+.profile-link {
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  color: inherit;
+  width: 100%;
+}
+
+.profile-link:disabled {
+  cursor: default;
+}
+
+.profile-link:not(:disabled):hover .profile-link-text {
+  text-decoration: underline;
+}
+
+.profile-link-text {
+  color: rgb(var(--v-theme-primary));
 }
 </style>
