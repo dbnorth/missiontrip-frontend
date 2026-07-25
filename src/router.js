@@ -15,6 +15,8 @@ import TripBrowseView from "./views/TripBrowseView.vue";
 import EditTripApplicationView from "./views/EditTripApplicationView.vue";
 import DonorTripPage from "./views/DonorTripPage.vue";
 import DonorParticipantPage from "./views/DonorParticipantPage.vue";
+import OrganizationTripsPage from "./views/OrganizationTripsPage.vue";
+import PublicTripPage from "./views/PublicTripPage.vue";
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -38,6 +40,18 @@ const router = createRouter({
     { path: "/worker-roles", name: "workerRoles", component: WorkerRolesList },
     { path: "/document-types", name: "documentTypes", component: DocumentTypesList },
     {
+      path: "/org/:orgSlug",
+      name: "orgTrips",
+      component: OrganizationTripsPage,
+      props: true,
+    },
+    {
+      path: "/trip/:tripSlug",
+      name: "publicTrip",
+      component: PublicTripPage,
+      props: true,
+    },
+    {
       path: "/donate/trip/:tripSlug/participant/:personSlug",
       name: "donorParticipant",
       component: DonorParticipantPage,
@@ -54,10 +68,13 @@ const router = createRouter({
 
 router.beforeEach((to, _from, next) => {
   const user = Utils.getStore("user");
-  const publicRoutes = ["login", "donorTrip", "donorParticipant"];
+  const publicRoutes = ["login", "donorTrip", "donorParticipant", "orgTrips", "publicTrip"];
   if (publicRoutes.includes(to.name)) {
-    if (to.name === "login" && user) next({ name: "home" });
-    else next();
+    if (to.name === "login" && user) {
+      const redirect = typeof to.query.redirect === "string" ? to.query.redirect : "";
+      if (redirect.startsWith("/") && !redirect.startsWith("//")) next(redirect);
+      else next({ name: "home" });
+    } else next();
     return;
   }
   if (!user) {

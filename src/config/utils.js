@@ -32,12 +32,45 @@ export default class Utils {
       if (user.actingOrganizationId === null || user.actingOrganizationId === "") return null;
       return user.actingOrganizationId ?? user.currentOrgId ?? null;
     }
+    const scopeOrgs = Utils.getScopeOrgs(user);
     if (user.currentOrgId != null && user.currentOrgId !== "") {
-      return Number(user.currentOrgId);
+      const id = Number(user.currentOrgId);
+      if (!scopeOrgs.length || scopeOrgs.some((org) => Number(org.orgId) === id)) {
+        return id;
+      }
     }
-    const roleOrgs = Utils.getRoleOrgs(user);
-    if (roleOrgs.length) return roleOrgs[0].orgId;
+    if (scopeOrgs.length) return scopeOrgs[0].orgId;
     return null;
+  };
+
+  /** Organizations where the user is Org Admin, sorted by name. */
+  static getOrgAdminOrgs = (user) => {
+    if (!user || Utils.isSystemAdmin(user)) return [];
+    const byId = new Map();
+    for (const role of user.orgRoles || []) {
+      if (role.roleName !== "Org Admin" || role.orgId == null) continue;
+      const orgId = Number(role.orgId);
+      if (byId.has(orgId)) continue;
+      byId.set(orgId, {
+        orgId,
+        orgName: role.orgName,
+        logo: role.logo,
+        colorFamily: role.colorFamily,
+      });
+    }
+    return [...byId.values()].sort((a, b) => (a.orgName || "").localeCompare(b.orgName || ""));
+  };
+
+  /**
+   * Organizations the user may select for menu/admin scope.
+   * Org Admins: only organizations they administer.
+   * Others: organizations from any org or trip role.
+   */
+  static getScopeOrgs = (user) => {
+    if (!user || Utils.isSystemAdmin(user)) return [];
+    const orgAdminOrgs = Utils.getOrgAdminOrgs(user);
+    if (orgAdminOrgs.length) return orgAdminOrgs;
+    return Utils.getRoleOrgs(user);
   };
 
   /** Organizations where the user has any org or trip role, sorted by name. */
@@ -69,8 +102,8 @@ export default class Utils {
     return [...byId.values()].sort((a, b) => (a.orgName || "").localeCompare(b.orgName || ""));
   };
 
-  /** @deprecated Prefer getRoleOrgs; kept for callers that previously scoped to admin/leader orgs. */
-  static getSelectableOrgs = (user) => Utils.getRoleOrgs(user);
+  /** @deprecated Prefer getScopeOrgs for menu/admin pickers; getRoleOrgs for membership lists. */
+  static getSelectableOrgs = (user) => Utils.getScopeOrgs(user);
 
   static isOrgAdmin = (user, orgId) => {
     if (Utils.isSystemAdmin(user)) return true;
@@ -107,7 +140,7 @@ export default class Utils {
   static showOrgScopeNotice = (user) => {
     if (!user) return false;
     if (Utils.isSystemAdmin(user)) return true;
-    return Utils.getRoleOrgs(user).length > 1;
+    return Utils.getScopeOrgs(user).length > 1;
   };
 
   static orgDisplayName = (user, orgId) => {

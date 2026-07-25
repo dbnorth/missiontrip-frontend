@@ -20,6 +20,28 @@ export function donorTripPath(trip) {
   return slug ? `/donate/trip/${slug}` : "/donate/trip";
 }
 
+/** Public trip overview URL — trip name only (no ids). */
+export function publicTripPath(trip) {
+  const slug = toUrlSlug(trip?.name);
+  return slug ? `/trip/${slug}` : "/trip";
+}
+
+export function publicTripRoute(trip) {
+  const slug = toUrlSlug(trip?.name);
+  return slug ? { name: "publicTrip", params: { tripSlug: slug } } : { name: "home" };
+}
+
+/** Public organization trips page URL — org name only (no ids). */
+export function orgPublicPath(org) {
+  const slug = toUrlSlug(org?.name);
+  return slug ? `/org/${slug}` : "/org";
+}
+
+export function orgPublicRoute(org) {
+  const slug = toUrlSlug(org?.name);
+  return slug ? { name: "orgTrips", params: { orgSlug: slug } } : { name: "home" };
+}
+
 /** Public participant donate URL — trip name + person name (no ids). */
 export function donorParticipantPath(trip, person) {
   const tripSlug = toUrlSlug(trip?.name);

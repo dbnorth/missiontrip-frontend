@@ -34,9 +34,7 @@ const viewKind = computed(() => {
   const type = (viewType.value || "").toLowerCase();
   const name = (viewName.value || "").toLowerCase();
   if (type.includes("pdf") || name.endsWith(".pdf")) return "pdf";
-  if (type.startsWith("image/heic") || type.startsWith("image/heif")) return "unsupported";
-  if (name.endsWith(".heic") || name.endsWith(".heif")) return "unsupported";
-  if (type.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp)$/.test(name)) return "image";
+  if (type.startsWith("image/") || /\.(jpg|jpeg|png|gif|webp|heic|heif)$/.test(name)) return "image";
   return "unsupported";
 });
 
@@ -145,7 +143,12 @@ const viewDocument = async (row) => {
     viewUrl.value = url;
     viewType.value = type;
   } catch (e) {
-    message.value = e.response?.data?.message || "Unable to load document.";
+    const heicError = e?.code != null || /heic|heif/i.test(String(e?.message || ""));
+    message.value =
+      e.response?.data?.message ||
+      (heicError
+        ? "Unable to preview this HEIC image. You can still download it."
+        : "Unable to load document.");
     viewDialog.value = false;
   } finally {
     viewLoading.value = false;

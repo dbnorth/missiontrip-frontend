@@ -51,8 +51,30 @@ export default {
     const response = await apiClient.get(`/people/${personId}/documents/${row.id}/view`, {
       responseType: "blob",
     });
-    const type = response.data?.type || response.headers?.["content-type"] || "";
-    const url = URL.createObjectURL(response.data);
+    let blob = response.data;
+    let type = blob?.type || response.headers?.["content-type"] || "";
+    const name = String(row.documentFileName || "").toLowerCase();
+    const isHeic =
+      /image\/hei[cf]/i.test(type) ||
+      name.endsWith(".heic") ||
+      name.endsWith(".heif") ||
+      ((type === "application/octet-stream" || !type) &&
+        (name.endsWith(".heic") || name.endsWith(".heif")));
+
+    if (isHeic) {
+      const heic2any = (await import("heic2any")).default;
+      const heicBlob =
+        /image\/hei[cf]/i.test(type) ? blob : new Blob([blob], { type: "image/heic" });
+      const converted = await heic2any({
+        blob: heicBlob,
+        toType: "image/jpeg",
+        quality: 0.92,
+      });
+      blob = Array.isArray(converted) ? converted[0] : converted;
+      type = blob?.type || "image/jpeg";
+    }
+
+    const url = URL.createObjectURL(blob);
     return { url, type };
   },
 };

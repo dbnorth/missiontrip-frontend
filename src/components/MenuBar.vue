@@ -155,68 +155,42 @@ const loadUserOrgItems = async () => {
     return;
   }
 
-  try {
-    const res = await OrganizationServices.getAllForMenu();
-    const items = (res.data || [])
-      .map((org) => ({ name: org.name, id: Number(org.id) }))
-      .sort((a, b) => (a.name || "").localeCompare(b.name || ""));
-    userOrgItems.value = items;
+  const scopeOrgs = Utils.getScopeOrgs(user.value);
+  const items = scopeOrgs.map((org) => ({
+    name: org.orgName,
+    id: Number(org.orgId),
+  }));
+  userOrgItems.value = items;
 
-    const stored = Utils.getStore("user");
-    if (!stored) return;
+  const stored = Utils.getStore("user");
+  if (!stored) return;
 
-    const roleOrgs = Utils.getRoleOrgs(stored);
-    const defaultOrgId = roleOrgs[0]?.orgId ?? null;
-    const currentIsValid =
-      stored.currentOrgId != null &&
-      items.some((item) => Number(item.id) === Number(stored.currentOrgId));
+  const defaultOrgId = scopeOrgs[0]?.orgId ?? null;
+  const currentIsValid =
+    stored.currentOrgId != null &&
+    items.some((item) => Number(item.id) === Number(stored.currentOrgId));
 
-    let nextOrgId = currentIsValid ? Number(stored.currentOrgId) : defaultOrgId;
-    if (nextOrgId == null && items.length) nextOrgId = items[0].id;
+  let nextOrgId = currentIsValid ? Number(stored.currentOrgId) : defaultOrgId;
+  if (nextOrgId == null && items.length) nextOrgId = items[0].id;
 
-    const selected = items.find((item) => Number(item.id) === Number(nextOrgId));
-    const nextName = selected?.name || roleOrgs.find((o) => Number(o.orgId) === Number(nextOrgId))?.orgName || null;
+  const selected = items.find((item) => Number(item.id) === Number(nextOrgId));
+  const nextName =
+    selected?.name ||
+    scopeOrgs.find((o) => Number(o.orgId) === Number(nextOrgId))?.orgName ||
+    null;
 
-    if (
-      Number(stored.currentOrgId) !== Number(nextOrgId) ||
-      stored.currentOrgName !== nextName
-    ) {
-      const updated = {
-        ...stored,
-        currentOrgId: nextOrgId,
-        currentOrgName: nextName,
-      };
-      Utils.setStore("user", updated);
-      user.value = updated;
-      window.dispatchEvent(new CustomEvent("user-updated"));
-    }
-
-    const namesById = new Map(items.map((item) => [item.id, item.name]));
-    let changed = false;
-    const tripRoles = (stored.tripRoles || []).map((role) => {
-      const name = namesById.get(Number(role.orgId));
-      if (name && role.orgName !== name) {
-        changed = true;
-        return { ...role, orgName: name };
-      }
-      return role;
-    });
-    const orgRoles = (stored.orgRoles || []).map((role) => {
-      const name = namesById.get(Number(role.orgId));
-      if (name && role.orgName !== name) {
-        changed = true;
-        return { ...role, orgName: name };
-      }
-      return role;
-    });
-    if (changed) {
-      const latest = Utils.getStore("user") || stored;
-      const updated = { ...latest, tripRoles, orgRoles };
-      Utils.setStore("user", updated);
-      user.value = updated;
-    }
-  } catch {
-    userOrgItems.value = [];
+  if (
+    Number(stored.currentOrgId) !== Number(nextOrgId) ||
+    stored.currentOrgName !== nextName
+  ) {
+    const updated = {
+      ...stored,
+      currentOrgId: nextOrgId,
+      currentOrgName: nextName,
+    };
+    Utils.setStore("user", updated);
+    user.value = updated;
+    window.dispatchEvent(new CustomEvent("user-updated"));
   }
 };
 
@@ -241,6 +215,9 @@ const onActingOrgChange = (val) => {
 
 const onUserOrgChange = (val) => {
   const currentOrgId = val == null || val === "" ? null : Number(val);
+  const allowed = userOrgItems.value.some((item) => Number(item.id) === Number(currentOrgId));
+  if (currentOrgId != null && !allowed) return;
+
   const u = { ...Utils.getStore("user"), currentOrgId };
   if (currentOrgId) {
     const selected = userOrgItems.value.find((item) => Number(item.id) === currentOrgId);
@@ -302,7 +279,7 @@ onMounted(() => {
       <v-btn v-if="user.isAdmin || showOrgAdminNav" variant="text" :to="{ name: 'workerRoles' }">Worker roles</v-btn>
 
       <v-select
-        v-if="showUserOrgSelector"
+        v-if="showUserOrgSelector && userOrgItems.length > 1"
         class="ml-4"
         style="max-width: 220px"
         density="compact"

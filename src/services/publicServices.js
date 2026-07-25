@@ -13,6 +13,12 @@ export default {
       `/public/trips/by-name/${encodeURIComponent(tripSlug)}/participants/${encodeURIComponent(personSlug)}`
     );
   },
+  getOrgBySlug(orgSlug) {
+    return publicClient.get(`/public/orgs/by-name/${encodeURIComponent(orgSlug)}`);
+  },
+  getTripOverviewBySlug(tripSlug) {
+    return publicClient.get(`/public/trips/by-name/${encodeURIComponent(tripSlug)}/overview`);
+  },
   donate(data) {
     return publicClient.post("/public/donations", data);
   },

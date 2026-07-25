@@ -12,6 +12,7 @@ import ViewPersonProfileDialog from "../components/ViewPersonProfileDialog.vue";
 import ViewTripApplicationDialog from "../components/ViewTripApplicationDialog.vue";
 import TripWorkerRolesCard from "../components/TripWorkerRolesCard.vue";
 import ExportServices from "../services/exportServices.js";
+import TripTravelOptionServices from "../services/tripTravelOptionServices.js";
 import { formatMoneyDisplay } from "../utils/moneyUtils.js";
 import { countryName } from "../utils/locationData.js";
 import { donorTripPath, donorParticipantPath } from "../utils/donateUrls.js";
@@ -38,6 +39,7 @@ const viewApplicationMode = ref("view");
 const showDonations = ref(false);
 const donationsParticipant = ref(null);
 const teamRolesRefreshKey = ref(0);
+const travelOptions = ref([]);
 
 const bumpTeamRoles = () => {
   teamRolesRefreshKey.value += 1;
@@ -94,11 +96,40 @@ const loadDonations = () =>
     donations.value = r.data || [];
   });
 
+const loadTravelOptions = () =>
+  TripTravelOptionServices.getAll(tripId.value).then((r) => {
+    travelOptions.value = r.data || [];
+  });
+
+const travelOptionGroups = computed(() => {
+  const groups = new Map();
+  for (const option of travelOptions.value || []) {
+    const setNumber = Number(option.setNumber) > 0 ? Number(option.setNumber) : 1;
+    if (!groups.has(setNumber)) groups.set(setNumber, []);
+    groups.get(setNumber).push(option);
+  }
+  return [...groups.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([setNumber, options]) => ({
+      setNumber,
+      options: [...options].sort((a, b) => Number(a.id) - Number(b.id)),
+    }));
+});
+
+const formatAdjustment = (value) => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount === 0) {
+    return formatMoneyDisplay(0, { allowNegative: true }) || "$0.00";
+  }
+  const formatted = formatMoneyDisplay(Math.abs(amount), { allowNegative: true }) || "$0.00";
+  return amount > 0 ? `+${formatted}` : `-${formatted}`;
+};
+
 const refresh = async () => {
   loading.value = true;
   message.value = "";
   try {
-    await Promise.all([loadTrip(), loadParticipants(), loadDonations()]);
+    await Promise.all([loadTrip(), loadParticipants(), loadDonations(), loadTravelOptions()]);
   } catch (e) {
     message.value = e.response?.data?.message || "Unable to load trip.";
   } finally {
@@ -263,6 +294,43 @@ onMounted(refresh);
       :refresh-key="teamRolesRefreshKey"
       @changed="onTeamRolesChanged"
     />
+
+    <v-card v-if="trip" class="mb-6 pa-4">
+      <h2 class="text-h6 mb-3">Trip options</h2>
+      <v-alert
+        v-if="!travelOptionGroups.length"
+        type="info"
+        density="compact"
+        class="mb-0"
+      >
+        No trip options configured for this trip.
+      </v-alert>
+      <div v-else>
+        <div
+          v-for="group in travelOptionGroups"
+          :key="group.setNumber"
+          class="mb-4"
+        >
+          <div class="text-subtitle-2 font-weight-bold mb-2">
+            Trip Option {{ group.setNumber }}
+          </div>
+          <v-table density="compact">
+            <thead>
+              <tr>
+                <th>Description</th>
+                <th class="text-right" style="width: 160px">Price adjustment</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="option in group.options" :key="option.id">
+                <td>{{ option.description }}</td>
+                <td class="text-right">{{ formatAdjustment(option.priceAdjustment) }}</td>
+              </tr>
+            </tbody>
+          </v-table>
+        </div>
+      </div>
+    </v-card>
 
     <div class="d-flex align-center justify-space-between mb-3 flex-wrap ga-2">
       <h2 class="text-h6 mb-0">Participants</h2>
