@@ -9,6 +9,16 @@ const downloadCsv = async (path, filename) => {
     headers["X-Acting-Organization-Id"] = String(orgId);
   }
   const res = await fetch(`${getBaseUrl()}${path}`, { headers });
+  if (!res.ok) {
+    let message = "Unable to download CSV.";
+    try {
+      const data = await res.json();
+      if (data?.message) message = data.message;
+    } catch {
+      // ignore parse errors
+    }
+    throw new Error(message);
+  }
   const blob = await res.blob();
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");

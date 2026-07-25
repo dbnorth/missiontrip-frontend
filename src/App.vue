@@ -11,7 +11,7 @@ const theme = useTheme();
 const route = useRoute();
 
 const hideMenuBar = computed(() =>
-  ["donorTrip", "donorParticipant", "login"].includes(route.name)
+  ["donorTrip", "donorParticipant", "orgTrips", "publicTrip", "login"].includes(route.name)
 );
 
 const orgScopeKey = () => {

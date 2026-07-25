@@ -62,9 +62,7 @@ const {
 
 const isSystemAdmin = computed(() => Utils.isSystemAdmin(user.value));
 
-const orgAdminOrgs = computed(() =>
-  (user.value?.orgRoles || []).filter((r) => r.roleName === "Org Admin")
-);
+const orgAdminOrgs = computed(() => Utils.getOrgAdminOrgs(user.value));
 
 const orgAdminOrgItems = computed(() =>
   orgAdminOrgs.value.map((r) => ({ title: r.orgName, value: r.orgId }))

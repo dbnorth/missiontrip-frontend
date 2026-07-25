@@ -2,9 +2,10 @@
 import { ref } from "vue";
 import AuthServices from "../services/authServices.js";
 import Utils from "../config/utils.js";
-import { useRouter } from "vue-router";
+import { useRouter, useRoute } from "vue-router";
 
 const router = useRouter();
+const route = useRoute();
 const mode = ref("login");
 
 const email = ref("");
@@ -19,17 +20,22 @@ const formError = ref("");
 const loading = ref(false);
 
 const storeUserAndGoHome = (data, { fromRegistration = false } = {}) => {
-  const roleOrgs = Utils.getRoleOrgs(data);
-  const activeOrg = (data.orgRoles || []).find((r) => r.roleName === "Org Admin");
+  const scopeOrgs = Utils.getScopeOrgs(data);
+  const activeOrg = scopeOrgs[0] || null;
   const user = {
     ...data,
-    currentOrgId: activeOrg?.orgId ?? roleOrgs[0]?.orgId ?? null,
-    currentOrgName: activeOrg?.orgName ?? roleOrgs[0]?.orgName ?? null,
+    currentOrgId: activeOrg?.orgId ?? null,
+    currentOrgName: activeOrg?.orgName ?? null,
     currentTripId: data.tripRoles?.[0]?.tripId ?? null,
     fromRegistration,
   };
   Utils.setStore("user", user);
   window.dispatchEvent(new CustomEvent("user-logged-in"));
+  const redirect = typeof route.query.redirect === "string" ? route.query.redirect : "";
+  if (redirect.startsWith("/") && !redirect.startsWith("//")) {
+    router.push(redirect);
+    return;
+  }
   router.push({ name: "home" });
 };
 
