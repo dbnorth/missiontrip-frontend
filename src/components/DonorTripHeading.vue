@@ -6,11 +6,13 @@ import { countryName } from "../utils/locationData.js";
 
 const props = defineProps({
   trip: { type: Object, default: null },
+  showOrgWebsite: { type: Boolean, default: true },
 });
 
 const orgName = computed(() => props.trip?.organization?.name || "");
 const orgLogoUrl = computed(() => OrganizationServices.getLogoUrl(props.trip?.organization?.logo));
 const orgWebsiteUrl = computed(() => {
+  if (!props.showOrgWebsite) return null;
   const url = props.trip?.organization?.websiteUrl?.trim();
   if (!url) return null;
   if (/^https?:\/\//i.test(url)) return url;

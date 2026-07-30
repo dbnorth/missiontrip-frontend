@@ -102,9 +102,6 @@ const displayOrgTrips = computed(() => {
   return list.filter(isActiveUnendedTrip);
 });
 
-const isTripLeader = computed(() => Utils.isTripLeader(user.value, selectedTripId.value));
-const isParticipant = computed(() => Utils.isTripParticipant(user.value, selectedTripId.value));
-
 const isTripLeaderUser = computed(() =>
   (user.value?.tripRoles || []).some((r) => r.roleName === "Trip Leader")
 );
@@ -248,18 +245,18 @@ const viewBrowseTrip = (trip) => {
 };
 
 const openApplyDialog = (trip) => {
-  if (trip.alreadyApplied) return;
+  if (!trip?.id) return;
+  if (trip.alreadyApplied && !canUpdateApplication(trip)) return;
   applyTripId.value = trip.id;
   showApplyDialog.value = true;
 };
 
 const canUpdateApplication = (trip) =>
   trip?.alreadyApplied &&
-  (trip.applicationStatus === "incomplete" || trip.applicationStatus === "ready");
+  (trip.applicationStatus === "incomplete" || trip.applicationStatus === "applied");
 
 const openUpdateApplication = (trip) => {
-  if (!canUpdateApplication(trip)) return;
-  router.push({ name: "editTripApplication", params: { tripId: trip.id } });
+  openApplyDialog(trip);
 };
 
 const onApplicationSaved = () => {
@@ -392,6 +389,13 @@ const loadDashboard = () => {
     return;
   }
 
+  // Participant / pending home uses My Trips browse sections, not count cards.
+  if (showProfileSection.value) {
+    summary.value = null;
+    loading.value = false;
+    return;
+  }
+
   loading.value = true;
   const orgId = effectiveOrgId.value;
   const tripId = selectedTripId.value;
@@ -405,10 +409,6 @@ const loadDashboard = () => {
   }
   if (isOrgAdmin.value && orgId) {
     req = DashboardServices.org(orgId);
-  } else if (tripId && isTripLeader.value) {
-    req = DashboardServices.trip(tripId);
-  } else if (tripId && isParticipant.value) {
-    req = DashboardServices.participant(tripId);
   } else if (tripId) {
     req = DashboardServices.trip(tripId);
   } else if (Utils.isSystemAdmin(user.value)) {
@@ -599,7 +599,15 @@ onUnmounted(() => {
                   : "You have no upcoming trips. Check “Show all my trips” to include past trips."
               }}
             </v-alert>
-            <v-table v-else density="compact" class="mb-6">
+            <v-table v-else density="compact" class="trip-table mb-6">
+              <colgroup>
+                <col class="trip-table__name" />
+                <col class="trip-table__location" />
+                <col class="trip-table__date" />
+                <col class="trip-table__date" />
+                <col class="trip-table__status" />
+                <col class="trip-table__actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Name</th>
@@ -607,7 +615,7 @@ onUnmounted(() => {
                   <th>Start</th>
                   <th>End</th>
                   <th>Status</th>
-                  <th class="text-right" style="min-width: 180px">Actions</th>
+                  <th class="text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -651,14 +659,23 @@ onUnmounted(() => {
             >
               No upcoming trips available to apply for in this organization.
             </v-alert>
-            <v-table v-else density="compact">
+            <v-table v-else density="compact" class="trip-table">
+              <colgroup>
+                <col class="trip-table__name" />
+                <col class="trip-table__location" />
+                <col class="trip-table__date" />
+                <col class="trip-table__date" />
+                <col class="trip-table__status" />
+                <col class="trip-table__actions" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>Name</th>
                   <th>Location</th>
                   <th>Start</th>
                   <th>End</th>
-                  <th class="text-right" style="min-width: 180px">Actions</th>
+                  <th>Status</th>
+                  <th class="text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -667,6 +684,7 @@ onUnmounted(() => {
                   <td>{{ item.location || "—" }}</td>
                   <td>{{ formatDate(item.startDate) }}</td>
                   <td>{{ formatDate(item.endDate) }}</td>
+                  <td>—</td>
                   <td class="text-right">
                     <div class="d-flex justify-end ga-2 flex-wrap">
                       <v-btn size="small" variant="tonal" @click="viewBrowseTrip(item)">View</v-btn>
@@ -796,7 +814,7 @@ onUnmounted(() => {
           </v-data-table>
         </template>
 
-        <template v-else-if="!isOrgAdminUser">
+        <template v-else-if="!isOrgAdminUser && !showProfileSection">
           <v-select
             v-if="tripOptions.length > 1"
             v-model="selectedTripId"
@@ -871,3 +889,30 @@ onUnmounted(() => {
     />
   </v-container>
 </template>
+
+<style scoped>
+.trip-table :deep(table) {
+  table-layout: fixed;
+  width: 100%;
+}
+
+.trip-table__name {
+  width: 24%;
+}
+
+.trip-table__location {
+  width: 20%;
+}
+
+.trip-table__date {
+  width: 12%;
+}
+
+.trip-table__status {
+  width: 14%;
+}
+
+.trip-table__actions {
+  width: 18%;
+}
+</style>

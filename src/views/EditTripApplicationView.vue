@@ -8,12 +8,13 @@ import Utils from "../config/utils.js";
 import DonorTripHeading from "../components/DonorTripHeading.vue";
 import ParticipantAgreementSection from "../components/ParticipantAgreementSection.vue";
 import TripApplicationTravelOptions from "../components/TripApplicationTravelOptions.vue";
+import EditPersonDialog from "../components/EditPersonDialog.vue";
 import {
   tripParticipantStatusLabel,
   tripParticipantStatusColor,
 } from "../utils/tripParticipantStatus.js";
-import { getMissingProfileFields, isProfileComplete, isUnder18 } from "../utils/personProfile.js";
-import { isApplicationFormComplete } from "../utils/tripApplicationForm.js";
+import { isProfileComplete, isUnder18 } from "../utils/personProfile.js";
+import { isApplicationFormComplete, validateTravelOptionSelections } from "../utils/tripApplicationForm.js";
 
 const props = defineProps({
   tripId: { type: [String, Number], required: true },
@@ -35,6 +36,9 @@ const agreementContent = ref("");
 const travelOptions = ref([]);
 const selectedTravelOptionIds = ref([]);
 const travelOptionsRef = ref(null);
+const showProfileDialog = ref(false);
+
+const personId = computed(() => person.value?.id ?? Utils.getStore("user")?.personId ?? null);
 
 const form = ref({
   tripWorkerRoleId: null,
@@ -120,7 +124,11 @@ const documentRequirementWarning = computed(() => {
 });
 
 const profileComplete = computed(() => isProfileComplete(person.value));
-const missingProfileFields = computed(() => getMissingProfileFields(person.value));
+
+const onProfileSaved = async () => {
+  showProfileDialog.value = false;
+  await loadPerson();
+};
 
 const applicationFormComplete = computed(() =>
   isApplicationFormComplete({
@@ -136,6 +144,35 @@ const applicationFormComplete = computed(() =>
 
 const canAgreeToAgreement = computed(
   () => profileComplete.value && applicationFormComplete.value
+);
+
+const agreementComplete = computed(() => {
+  if (!agreementRequired.value) return true;
+  if (!form.value.agreementAccepted) return false;
+  if (!form.value.agreementSignatureName?.trim()) return false;
+  if (participantUnder18.value) {
+    if (!form.value.agreementAdultFirstName?.trim()) return false;
+    if (!form.value.agreementAdultLastName?.trim()) return false;
+    if (!form.value.agreementAdultEmail?.trim()) return false;
+    if (!form.value.agreementAdultRelationship?.trim()) return false;
+  }
+  return true;
+});
+
+const travelOptionsComplete = computed(
+  () => !validateTravelOptionSelections(travelOptions.value, selectedTravelOptionIds.value)
+);
+
+const readyToSubmit = computed(
+  () =>
+    profileComplete.value &&
+    applicationFormComplete.value &&
+    agreementComplete.value &&
+    travelOptionsComplete.value
+);
+
+const primaryActionLabel = computed(() =>
+  readyToSubmit.value ? "Submit Application" : "Save Incomplete Application"
 );
 
 const statusLabel = computed(() =>
@@ -252,14 +289,13 @@ const save = async () => {
     formError.value = "Select a trip role with available positions.";
     return;
   }
-  if (form.value.hasPreferredRoommate && !form.value.preferredRoommateNames?.trim()) {
-    formError.value = "Enter preferred roommate name(s).";
-    return;
-  }
-  const travelOptionsError = travelOptionsRef.value?.validate?.();
-  if (travelOptionsError) {
-    formError.value = travelOptionsError;
-    return;
+  // Unanswered questions are saved as an incomplete application instead of blocking the save.
+  if (readyToSubmit.value) {
+    const travelOptionsError = travelOptionsRef.value?.validate?.();
+    if (travelOptionsError) {
+      formError.value = travelOptionsError;
+      return;
+    }
   }
   if (agreementRequired.value && form.value.agreementAccepted) {
     if (!form.value.agreementSignatureName?.trim()) {
@@ -329,10 +365,11 @@ const save = async () => {
         .filter((o) => o.selected)
         .map((o) => Number(o.id));
     }
-    canEdit.value = ["incomplete", "ready"].includes(application.value?.status);
+    canEdit.value = ["incomplete", "applied"].includes(application.value?.status);
     applyFormFromApplication(application.value);
     messageType.value = "success";
     message.value = res.data?.message || "Application updated.";
+    router.push({ name: "home" });
   } catch (e) {
     formError.value = e.response?.data?.message || "Unable to update application.";
   } finally {
@@ -364,27 +401,30 @@ onMounted(load);
     <v-alert v-if="formError" type="error" density="compact" class="mb-4">{{ formError }}</v-alert>
 
     <template v-if="!loading && trip">
-      <DonorTripHeading :trip="trip" />
+      <DonorTripHeading :trip="trip" :show-org-website="false" />
 
       <v-alert
         v-if="!profileComplete"
         type="warning"
         density="compact"
-        class="mt-4 mb-0"
+        class="mt-4 mb-0 mx-auto"
         max-width="640"
       >
-        Your profile is incomplete. Update your profile for this application to be marked Ready.
-        <ul v-if="missingProfileFields.length" class="mt-2 mb-0">
-          <li v-for="field in missingProfileFields" :key="field">{{ field }}</li>
-        </ul>
+        Your profile needs to be completed before this application can be submitted.
         <div class="mt-3">
-          <v-btn size="small" color="primary" variant="tonal" @click="router.push({ name: 'home' })">
+          <v-btn
+            size="small"
+            color="primary"
+            variant="flat"
+            :disabled="!personId"
+            @click="showProfileDialog = true"
+          >
             Update profile
           </v-btn>
         </div>
       </v-alert>
 
-      <v-card class="pa-4 mt-4" variant="outlined" max-width="640">
+      <v-card class="pa-4 mt-4 mx-auto" variant="outlined" max-width="640" width="100%">
         <v-alert
           v-if="!availableRoles.length"
           type="warning"
@@ -492,10 +532,17 @@ onMounted(load);
             :disabled="!canEdit || loading || !availableRoles.length"
             @click="save"
           >
-            Save application
+            {{ primaryActionLabel }}
           </v-btn>
         </div>
       </v-card>
     </template>
+
+    <EditPersonDialog
+      v-if="personId"
+      v-model="showProfileDialog"
+      :person-id="personId"
+      @saved="onProfileSaved"
+    />
   </v-container>
 </template>

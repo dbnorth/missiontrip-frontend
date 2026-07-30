@@ -4,7 +4,6 @@ import { useRouter } from "vue-router";
 import PublicServices from "../services/publicServices.js";
 import OrganizationServices from "../services/organizationServices.js";
 import TripServices from "../services/tripServices.js";
-import PublicApplyFlow from "../components/PublicApplyFlow.vue";
 import { toUrlSlug, donorTripPath, publicTripPath } from "../utils/donateUrls.js";
 import { countryName } from "../utils/locationData.js";
 
@@ -17,7 +16,6 @@ const loading = ref(false);
 const message = ref("");
 const organization = ref(null);
 const trips = ref([]);
-const applyFlow = ref(null);
 
 const orgLogoUrl = computed(() => OrganizationServices.getLogoUrl(organization.value?.logo));
 const orgWebsiteUrl = computed(() => {
@@ -67,7 +65,17 @@ const load = async () => {
 };
 
 const openApply = (trip) => {
-  applyFlow.value?.openForTrip(trip);
+  if (!trip?.id) return;
+  router.push({
+    name: "applyAuth",
+    query: {
+      tripId: String(trip.id),
+      trip: trip.name || undefined,
+      orgId: organization.value?.id != null ? String(organization.value.id) : undefined,
+      org: organization.value?.name || undefined,
+      orgSlug: props.orgSlug,
+    },
+  });
 };
 
 watch(() => props.orgSlug, load);
@@ -149,11 +157,5 @@ onMounted(load);
         </v-col>
       </v-row>
     </template>
-
-    <PublicApplyFlow
-      ref="applyFlow"
-      :organization-id="organization?.id"
-      :organization-name="organization?.name || ''"
-    />
   </v-container>
 </template>

@@ -7,8 +7,9 @@ import Utils from "../config/utils.js";
 import DonorTripHeading from "./DonorTripHeading.vue";
 import ParticipantAgreementSection from "./ParticipantAgreementSection.vue";
 import TripApplicationTravelOptions from "./TripApplicationTravelOptions.vue";
-import { getMissingProfileFields, isProfileComplete, isUnder18 } from "../utils/personProfile.js";
-import { isApplicationFormComplete } from "../utils/tripApplicationForm.js";
+import EditPersonDialog from "./EditPersonDialog.vue";
+import { isProfileComplete, isUnder18 } from "../utils/personProfile.js";
+import { isApplicationFormComplete, validateTravelOptionSelections } from "../utils/tripApplicationForm.js";
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -28,6 +29,9 @@ const agreementContent = ref("");
 const travelOptions = ref([]);
 const selectedTravelOptionIds = ref([]);
 const travelOptionsRef = ref(null);
+const showProfileDialog = ref(false);
+
+const personId = computed(() => person.value?.id ?? Utils.getStore("user")?.personId ?? null);
 
 const form = ref({
   tripWorkerRoleId: null,
@@ -42,14 +46,21 @@ const form = ref({
   agreementAdultLastName: "",
   agreementAdultEmail: "",
   agreementAdultRelationship: "",
+  version: 0,
 });
+
+const editingApplication = ref(false);
+const canEdit = ref(true);
 
 const agreementRequired = computed(() => !!agreementContent.value?.trim());
 const participantUnder18 = computed(() => isUnder18(person.value?.birthDate));
 
-const availableRoles = computed(() =>
-  (rolesNeeded.value || []).filter((r) => (r.availableCount || 0) > 0)
-);
+const availableRoles = computed(() => {
+  const currentId = Number(form.value.tripWorkerRoleId);
+  return (rolesNeeded.value || []).filter(
+    (r) => (r.availableCount || 0) > 0 || (editingApplication.value && Number(r.id) === currentId)
+  );
+});
 
 const roleItems = computed(() =>
   availableRoles.value.map((r) => ({
@@ -113,7 +124,11 @@ const documentRequirementWarning = computed(() => {
 });
 
 const profileComplete = computed(() => isProfileComplete(person.value));
-const missingProfileFields = computed(() => getMissingProfileFields(person.value));
+
+const onProfileSaved = async () => {
+  showProfileDialog.value = false;
+  await loadPerson();
+};
 
 const applicationFormComplete = computed(() =>
   isApplicationFormComplete({
@@ -129,6 +144,40 @@ const applicationFormComplete = computed(() =>
 
 const canAgreeToAgreement = computed(
   () => profileComplete.value && applicationFormComplete.value
+);
+
+const agreementComplete = computed(() => {
+  if (!agreementRequired.value) return true;
+  if (!form.value.agreementAccepted) return false;
+  if (!form.value.agreementSignatureName?.trim()) return false;
+  if (participantUnder18.value) {
+    if (!form.value.agreementAdultFirstName?.trim()) return false;
+    if (!form.value.agreementAdultLastName?.trim()) return false;
+    if (!form.value.agreementAdultEmail?.trim()) return false;
+    if (!form.value.agreementAdultRelationship?.trim()) return false;
+  }
+  return true;
+});
+
+const travelOptionsComplete = computed(
+  () => !validateTravelOptionSelections(travelOptions.value, selectedTravelOptionIds.value)
+);
+
+/** Matches the backend "applied" status: profile + form + agreement + travel options. */
+const readyToSubmit = computed(
+  () =>
+    profileComplete.value &&
+    applicationFormComplete.value &&
+    agreementComplete.value &&
+    travelOptionsComplete.value
+);
+
+const primaryActionLabel = computed(() =>
+  readyToSubmit.value ? "Submit Application" : "Save Incomplete Application"
+);
+
+const dialogTitle = computed(() =>
+  editingApplication.value ? "Update application" : "Apply for trip"
 );
 
 const open = computed({
@@ -150,9 +199,30 @@ const resetForm = () => {
     agreementAdultLastName: "",
     agreementAdultEmail: "",
     agreementAdultRelationship: "",
+    version: 0,
   };
   selectedTravelOptionIds.value = [];
   formError.value = "";
+  editingApplication.value = false;
+  canEdit.value = true;
+};
+
+const applyFormFromApplication = (row) => {
+  form.value = {
+    tripWorkerRoleId: row?.tripWorkerRoleId ?? null,
+    willSelfFund: !!row?.willSelfFund,
+    willRaiseFunds: !!row?.willRaiseFunds,
+    licenseStatus: row?.licenseStatus || null,
+    hasPreferredRoommate: !!row?.hasPreferredRoommate,
+    preferredRoommateNames: row?.preferredRoommateNames || "",
+    agreementAccepted: !!row?.agreementAccepted,
+    agreementSignatureName: row?.agreementSignatureName || "",
+    agreementAdultFirstName: row?.agreementAdultFirstName || "",
+    agreementAdultLastName: row?.agreementAdultLastName || "",
+    agreementAdultEmail: row?.agreementAdultEmail || "",
+    agreementAdultRelationship: row?.agreementAdultRelationship || "",
+    version: row?.version ?? 0,
+  };
 };
 
 const loadPersonDocuments = async () => {
@@ -183,37 +253,64 @@ const loadPerson = async () => {
   }
 };
 
+const loadExistingApplication = async () => {
+  const res = await TripServices.getApplication(props.tripId);
+  trip.value = res.data?.trip || null;
+  rolesNeeded.value = res.data?.rolesNeeded || [];
+  travelOptions.value = res.data?.travelOptions || [];
+  selectedTravelOptionIds.value = (res.data?.travelOptions || [])
+    .filter((o) => o.selected)
+    .map((o) => Number(o.id));
+  agreementContent.value = res.data?.participantAgreement?.exists
+    ? res.data.participantAgreement.content || ""
+    : "";
+  editingApplication.value = true;
+  canEdit.value = !!res.data?.canEdit;
+  applyFormFromApplication(res.data?.application);
+  if (!canEdit.value) {
+    formError.value = `This application cannot be edited while its status is ${
+      res.data?.applicationStatus || "unknown"
+    }.`;
+  }
+};
+
+const loadNewApplication = async () => {
+  const res = await TripServices.getBrowseTrip(props.tripId);
+  trip.value = res.data?.trip || null;
+  rolesNeeded.value = res.data?.rolesNeeded || [];
+  travelOptions.value = res.data?.travelOptions || [];
+  selectedTravelOptionIds.value = (res.data?.travelOptions || [])
+    .filter((o) => o.selected)
+    .map((o) => Number(o.id));
+  agreementContent.value = res.data?.participantAgreement?.exists
+    ? res.data.participantAgreement.content || ""
+    : "";
+
+  if (!res.data?.alreadyApplied) return;
+
+  const status = res.data?.applicationStatus;
+  if (status === "incomplete" || status === "applied") {
+    await loadExistingApplication();
+    return;
+  }
+
+  formError.value =
+    status === "approved"
+      ? "You are already on this trip."
+      : status
+        ? `Your previous application for this trip is ${status}.`
+        : "You have already applied to this trip.";
+  canEdit.value = false;
+};
+
 const load = async () => {
   if (!props.tripId) return;
   loading.value = true;
   formError.value = "";
   resetForm();
   try {
-    const [res] = await Promise.all([
-      TripServices.getBrowseTrip(props.tripId),
-      loadPersonDocuments(),
-      loadPerson(),
-    ]);
-    trip.value = res.data?.trip || null;
-    rolesNeeded.value = res.data?.rolesNeeded || [];
-    travelOptions.value = res.data?.travelOptions || [];
-    selectedTravelOptionIds.value = (res.data?.travelOptions || [])
-      .filter((o) => o.selected)
-      .map((o) => Number(o.id));
-    agreementContent.value = res.data?.participantAgreement?.exists
-      ? res.data.participantAgreement.content || ""
-      : "";
-    if (res.data?.alreadyApplied) {
-      const status = res.data?.applicationStatus;
-      formError.value =
-        status === "approved"
-          ? "You are already on this trip."
-          : status === "incomplete" || status === "ready"
-            ? "You have already applied to this trip."
-            : status
-              ? `Your previous application for this trip is ${status}.`
-              : "You have already applied to this trip.";
-    }
+    await Promise.all([loadPersonDocuments(), loadPerson()]);
+    await loadNewApplication();
   } catch (e) {
     formError.value = e.response?.data?.message || "Unable to load trip.";
     trip.value = null;
@@ -222,6 +319,8 @@ const load = async () => {
     travelOptions.value = [];
     selectedTravelOptionIds.value = [];
     agreementContent.value = "";
+    editingApplication.value = false;
+    canEdit.value = false;
   } finally {
     loading.value = false;
   }
@@ -262,20 +361,56 @@ const close = () => {
   open.value = false;
 };
 
+const buildPayload = () => ({
+  tripWorkerRoleId: Number(form.value.tripWorkerRoleId),
+  willSelfFund: !!form.value.willSelfFund,
+  willRaiseFunds: !!form.value.willRaiseFunds,
+  licenseStatus: licenseRequired.value ? form.value.licenseStatus : null,
+  hasPreferredRoommate: !!form.value.hasPreferredRoommate,
+  preferredRoommateNames: form.value.hasPreferredRoommate
+    ? form.value.preferredRoommateNames.trim()
+    : null,
+  agreementAccepted: agreementRequired.value ? !!form.value.agreementAccepted : false,
+  agreementSignatureName: agreementRequired.value
+    ? form.value.agreementSignatureName.trim() || null
+    : null,
+  agreementAdultFirstName:
+    agreementRequired.value && participantUnder18.value
+      ? form.value.agreementAdultFirstName.trim() || null
+      : null,
+  agreementAdultLastName:
+    agreementRequired.value && participantUnder18.value
+      ? form.value.agreementAdultLastName.trim() || null
+      : null,
+  agreementAdultEmail:
+    agreementRequired.value && participantUnder18.value
+      ? form.value.agreementAdultEmail.trim() || null
+      : null,
+  agreementAdultRelationship:
+    agreementRequired.value && participantUnder18.value
+      ? form.value.agreementAdultRelationship.trim() || null
+      : null,
+  selectedTravelOptionIds: selectedTravelOptionIds.value,
+  ...(editingApplication.value ? { version: form.value.version } : {}),
+});
+
 const save = async () => {
   formError.value = "";
+  if (!canEdit.value) {
+    formError.value = "This application cannot be edited.";
+    return;
+  }
   if (!form.value.tripWorkerRoleId) {
     formError.value = "Select a trip role with available positions.";
     return;
   }
-  if (form.value.hasPreferredRoommate && !form.value.preferredRoommateNames?.trim()) {
-    formError.value = "Enter preferred roommate name(s).";
-    return;
-  }
-  const travelOptionsError = travelOptionsRef.value?.validate?.();
-  if (travelOptionsError) {
-    formError.value = travelOptionsError;
-    return;
+  // Unanswered questions are saved as an incomplete application instead of blocking the save.
+  if (readyToSubmit.value) {
+    const travelOptionsError = travelOptionsRef.value?.validate?.();
+    if (travelOptionsError) {
+      formError.value = travelOptionsError;
+      return;
+    }
   }
   if (agreementRequired.value && form.value.agreementAccepted) {
     if (!form.value.agreementSignatureName?.trim()) {
@@ -306,37 +441,12 @@ const save = async () => {
 
   saving.value = true;
   try {
-    await TripServices.applyToTrip(props.tripId, {
-      tripWorkerRoleId: Number(form.value.tripWorkerRoleId),
-      willSelfFund: !!form.value.willSelfFund,
-      willRaiseFunds: !!form.value.willRaiseFunds,
-      licenseStatus: licenseRequired.value ? form.value.licenseStatus : null,
-      hasPreferredRoommate: !!form.value.hasPreferredRoommate,
-      preferredRoommateNames: form.value.hasPreferredRoommate
-        ? form.value.preferredRoommateNames.trim()
-        : null,
-      agreementAccepted: agreementRequired.value ? !!form.value.agreementAccepted : false,
-      agreementSignatureName: agreementRequired.value
-        ? form.value.agreementSignatureName.trim() || null
-        : null,
-      agreementAdultFirstName:
-        agreementRequired.value && participantUnder18.value
-          ? form.value.agreementAdultFirstName.trim() || null
-          : null,
-      agreementAdultLastName:
-        agreementRequired.value && participantUnder18.value
-          ? form.value.agreementAdultLastName.trim() || null
-          : null,
-      agreementAdultEmail:
-        agreementRequired.value && participantUnder18.value
-          ? form.value.agreementAdultEmail.trim() || null
-          : null,
-      agreementAdultRelationship:
-        agreementRequired.value && participantUnder18.value
-          ? form.value.agreementAdultRelationship.trim() || null
-          : null,
-      selectedTravelOptionIds: selectedTravelOptionIds.value,
-    });
+    const payload = buildPayload();
+    if (editingApplication.value) {
+      await TripServices.updateApplication(props.tripId, payload);
+    } else {
+      await TripServices.applyToTrip(props.tripId, payload);
+    }
     emit("saved");
     close();
   } catch (e) {
@@ -350,12 +460,12 @@ const save = async () => {
 <template>
   <v-dialog v-model="open" max-width="640" scrollable persistent>
     <v-card>
-      <v-card-title>Apply for trip</v-card-title>
+      <v-card-title>{{ dialogTitle }}</v-card-title>
       <v-card-text style="max-height: 75vh">
         <v-progress-linear v-if="loading" indeterminate class="mb-4" />
 
         <template v-if="!loading && trip">
-          <DonorTripHeading :trip="trip" />
+          <DonorTripHeading :trip="trip" :show-org-website="false" />
 
           <v-alert
             v-if="!profileComplete"
@@ -363,10 +473,18 @@ const save = async () => {
             density="compact"
             class="mb-3"
           >
-            Your profile is incomplete. Update your profile for this application to be marked Ready.
-            <ul v-if="missingProfileFields.length" class="mt-2 mb-0">
-              <li v-for="field in missingProfileFields" :key="field">{{ field }}</li>
-            </ul>
+            Your profile needs to be completed before this application can be submitted.
+            <div class="mt-3">
+              <v-btn
+                size="small"
+                color="primary"
+                variant="flat"
+                :disabled="!personId"
+                @click="showProfileDialog = true"
+              >
+                Update profile
+              </v-btn>
+            </div>
           </v-alert>
 
           <v-alert
@@ -383,7 +501,7 @@ const save = async () => {
             :items="roleItems"
             label="Trip role"
             density="compact"
-            :disabled="!availableRoles.length"
+            :disabled="!canEdit || !availableRoles.length"
             hint="Only roles with open positions are listed"
             persistent-hint
             class="mb-2"
@@ -405,6 +523,7 @@ const save = async () => {
             density="compact"
             hide-details
             class="mt-0"
+            :disabled="!canEdit"
           />
           <v-checkbox
             v-model="form.willRaiseFunds"
@@ -412,6 +531,7 @@ const save = async () => {
             density="compact"
             hide-details
             class="mb-2"
+            :disabled="!canEdit"
           />
 
           <v-select
@@ -421,6 +541,7 @@ const save = async () => {
             :label="licenseLabel"
             density="compact"
             class="mb-2"
+            :disabled="!canEdit"
           />
 
           <div class="text-subtitle-2 mb-1 mt-2">Roommate preference</div>
@@ -430,6 +551,7 @@ const save = async () => {
             density="compact"
             hide-details
             class="mt-0 mb-2"
+            :disabled="!canEdit"
           />
           <v-text-field
             v-if="form.hasPreferredRoommate"
@@ -437,6 +559,7 @@ const save = async () => {
             label="Preferred roommate name(s)"
             density="compact"
             autocomplete="off"
+            :disabled="!canEdit"
           />
 
           <TripApplicationTravelOptions
@@ -444,6 +567,7 @@ const save = async () => {
             v-model:selected-ids="selectedTravelOptionIds"
             :base-cost="trip?.participantCost"
             :options="travelOptions"
+            :disabled="!canEdit"
           />
 
           <ParticipantAgreementSection
@@ -456,6 +580,7 @@ const save = async () => {
             :under18="participantUnder18"
             :can-agree="canAgreeToAgreement"
             :content="agreementContent"
+            :disabled="!canEdit"
           />
         </template>
 
@@ -467,12 +592,19 @@ const save = async () => {
         <v-btn
           color="primary"
           :loading="saving"
-          :disabled="loading || !trip || !availableRoles.length"
+          :disabled="loading || !trip || !canEdit || !availableRoles.length"
           @click="save"
         >
-          Submit application
+          {{ primaryActionLabel }}
         </v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
+
+  <EditPersonDialog
+    v-if="personId"
+    v-model="showProfileDialog"
+    :person-id="personId"
+    @saved="onProfileSaved"
+  />
 </template>

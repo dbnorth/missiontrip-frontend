@@ -1,6 +1,7 @@
 <script setup>
 import { computed } from "vue";
 import { formatMoneyDisplay } from "../utils/moneyUtils.js";
+import { validateTravelOptionSelections } from "../utils/tripApplicationForm.js";
 
 const props = defineProps({
   baseCost: { type: [Number, String], default: null },
@@ -84,25 +85,6 @@ const onSingleToggle = (group, option, checked) => {
 const onMultiSelection = (group, value) => {
   if (value == null) return;
   replaceSetSelection(group, value);
-};
-
-const validateTravelOptionSelections = (options, selectedIds) => {
-  const groups = new Map();
-  for (const option of options || []) {
-    const setNumber = Number(option.setNumber) > 0 ? Number(option.setNumber) : 1;
-    if (!groups.has(setNumber)) groups.set(setNumber, []);
-    groups.get(setNumber).push(option);
-  }
-
-  const selected = new Set((selectedIds || []).map(Number));
-  for (const [setNumber, setOptions] of [...groups.entries()].sort((a, b) => a[0] - b[0])) {
-    if (setOptions.length <= 1) continue;
-    const selectedInSet = setOptions.filter((o) => selected.has(Number(o.id)));
-    if (selectedInSet.length !== 1) {
-      return `Select one option from Trip Option ${setNumber}.`;
-    }
-  }
-  return null;
 };
 
 defineExpose({

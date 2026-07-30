@@ -8,6 +8,7 @@ const props = defineProps({
   modelValue: { type: Boolean, default: false },
   tripId: { type: [Number, String], required: true },
   participant: { type: Object, default: null },
+  readOnly: { type: Boolean, default: false },
 });
 
 const emit = defineEmits(["update:modelValue", "changed"]);
@@ -20,7 +21,27 @@ const editingDonation = ref(null);
 
 const participantName = computed(() => {
   const p = props.participant?.person;
-  return p ? `${p.firstName || ""} ${p.lastName || ""}`.trim() : "";
+  const name = p ? `${p.firstName || ""} ${p.lastName || ""}`.trim() : "";
+  if (name) return name;
+  return props.readOnly ? "you" : "";
+});
+
+const dialogTitle = computed(() =>
+  participantName.value === "you"
+    ? "Your donations"
+    : `Donations for ${participantName.value || "participant"}`
+);
+
+const tableHeaders = computed(() => {
+  const headers = [
+    { title: "Date", key: "dateTime" },
+    { title: "Donor", key: "donor" },
+    { title: "Amount", key: "amount" },
+  ];
+  if (!props.readOnly) {
+    headers.push({ title: "Actions", key: "actions", sortable: false });
+  }
+  return headers;
 });
 
 const personId = computed(() => props.participant?.person?.id ?? props.participant?.peopleId ?? null);
@@ -79,9 +100,9 @@ const onDonationSaved = () => {
 <template>
   <v-dialog :model-value="modelValue" max-width="720" scrollable @update:model-value="(v) => !v && close()">
     <v-card>
-      <v-card-title>Donations for {{ participantName }}</v-card-title>
+      <v-card-title>{{ dialogTitle }}</v-card-title>
       <v-card-text style="max-height: 70vh">
-        <div class="d-flex justify-end mb-3">
+        <div v-if="!readOnly" class="d-flex justify-end mb-3">
           <v-btn color="primary" size="small" @click="openAddDonation">Add donation</v-btn>
         </div>
 
@@ -90,19 +111,17 @@ const onDonationSaved = () => {
         <v-data-table
           v-else
           :items="donations"
-          :headers="[
-            { title: 'Date', key: 'dateTime' },
-            { title: 'Donor', key: 'donor' },
-            { title: 'Amount', key: 'amount' },
-            { title: 'Actions', key: 'actions', sortable: false },
-          ]"
+          :headers="tableHeaders"
           density="compact"
         >
           <template #item.dateTime="{ item }">{{ formatDate(item.dateTime) }}</template>
           <template #item.donor="{ item }">{{ donorName(item) }}</template>
           <template #item.amount="{ item }">{{ formatAmount(item.amount) }}</template>
-          <template #item.actions="{ item }">
+          <template v-if="!readOnly" #item.actions="{ item }">
             <v-btn size="small" variant="text" @click="openEditDonation(item)">Edit</v-btn>
+          </template>
+          <template #no-data>
+            <div class="text-body-2 text-medium-emphasis pa-4">No donations yet.</div>
           </template>
         </v-data-table>
 
@@ -116,6 +135,7 @@ const onDonationSaved = () => {
   </v-dialog>
 
   <DonationFormDialog
+    v-if="!readOnly"
     v-model="showDonationForm"
     :trip-id="tripId"
     :person-id="personId"

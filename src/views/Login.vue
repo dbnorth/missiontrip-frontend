@@ -69,6 +69,9 @@ const register = () => {
     .then((res) => storeUserAndGoHome(res.data, { fromRegistration: true }))
     .catch((e) => {
       formError.value = e.response?.data?.message || "Registration failed.";
+      if (e.response?.status === 409) {
+        mode.value = "login";
+      }
     })
     .finally(() => {
       loading.value = false;
@@ -114,8 +117,8 @@ const showLogin = () => {
             {{ mode === "login" ? "Mission Trips" : "Create account" }}
           </v-card-title>
           <v-card-subtitle v-if="mode === 'register'" class="mb-2">
-            Create your account and optionally request access to organizations as a pending user. If you were
-            already added as a person, your existing record will be updated.
+            Create a new account and optionally join organizations as a trip participant. If you already have
+            an account, go back and sign in.
           </v-card-subtitle>
           <v-card-text>
             <template v-if="mode === 'login'">
@@ -145,7 +148,7 @@ const showLogin = () => {
                 item-title="name"
                 item-value="id"
                 label="Organizations (optional)"
-                hint="Request access as a Pending User for selected organizations"
+                hint="Join selected organizations as a Trip Participant"
                 persistent-hint
                 multiple
                 chips

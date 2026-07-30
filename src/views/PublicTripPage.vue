@@ -3,7 +3,6 @@ import { ref, computed, onMounted, watch } from "vue";
 import { useRouter } from "vue-router";
 import PublicServices from "../services/publicServices.js";
 import DonorTripHeading from "../components/DonorTripHeading.vue";
-import PublicApplyFlow from "../components/PublicApplyFlow.vue";
 import { toUrlSlug, donorTripPath, orgPublicRoute } from "../utils/donateUrls.js";
 
 const props = defineProps({
@@ -15,7 +14,6 @@ const loading = ref(false);
 const message = ref("");
 const trip = ref(null);
 const rolesNeeded = ref([]);
-const applyFlow = ref(null);
 
 const orgBackRoute = computed(() => {
   const org = trip.value?.organization;
@@ -57,7 +55,18 @@ const load = async () => {
 };
 
 const openApply = () => {
-  applyFlow.value?.openForTrip(trip.value);
+  if (!trip.value?.id) return;
+  const org = trip.value.organization;
+  router.push({
+    name: "applyAuth",
+    query: {
+      tripId: String(trip.value.id),
+      trip: trip.value.name || undefined,
+      orgId: organizationId.value != null ? String(organizationId.value) : undefined,
+      org: organizationName.value || undefined,
+      orgSlug: org?.name ? toUrlSlug(org.name) : undefined,
+    },
+  });
 };
 
 watch(() => props.tripSlug, load);
@@ -119,11 +128,5 @@ onMounted(load);
         </tbody>
       </v-table>
     </template>
-
-    <PublicApplyFlow
-      ref="applyFlow"
-      :organization-id="organizationId"
-      :organization-name="organizationName"
-    />
   </v-container>
 </template>

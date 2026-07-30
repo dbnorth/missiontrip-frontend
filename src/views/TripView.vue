@@ -157,7 +157,7 @@ const openViewProfile = (row) => {
 const applicationAction = (row) => {
   const status = String(row?.status || "").toLowerCase();
   if (status === "approved") return { label: "View App", mode: "view" };
-  if (status === "ready") return { label: "Approve App", mode: "approve" };
+  if (status === "applied") return { label: "Approve App", mode: "approve" };
   return { label: "Preview App", mode: "preview" };
 };
 

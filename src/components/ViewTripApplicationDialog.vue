@@ -23,7 +23,9 @@ const loadError = ref("");
 const actionError = ref("");
 const application = ref(null);
 
-const canApprove = computed(() => props.mode === "approve" && application.value?.status === "ready");
+const canApprove = computed(
+  () => props.mode === "approve" && application.value?.status === "applied"
+);
 const canManageApproved = computed(
   () => props.mode === "view" && application.value?.status === "approved"
 );
@@ -136,12 +138,12 @@ const approve = () => {
 
 const unapprove = () => {
   if (!canManageApproved.value) return;
-  return updateStatus("ready", "Application unapproved.", "Unable to unapprove application.");
+  return updateStatus("applied", "Application unapproved.", "Unable to unapprove application.");
 };
 
 const cancelApplication = () => {
   if (!canManageApproved.value) return;
-  return updateStatus("canceled", "Application canceled.", "Unable to cancel application.");
+  return updateStatus("cancelled", "Application cancelled.", "Unable to cancel application.");
 };
 </script>
 

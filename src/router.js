@@ -17,6 +17,8 @@ import DonorTripPage from "./views/DonorTripPage.vue";
 import DonorParticipantPage from "./views/DonorParticipantPage.vue";
 import OrganizationTripsPage from "./views/OrganizationTripsPage.vue";
 import PublicTripPage from "./views/PublicTripPage.vue";
+import ApplyAuthView from "./views/ApplyAuthView.vue";
+import ApplyCreateAccountView from "./views/ApplyCreateAccountView.vue";
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -51,6 +53,12 @@ const router = createRouter({
       component: PublicTripPage,
       props: true,
     },
+    { path: "/apply/sign-in", name: "applyAuth", component: ApplyAuthView },
+    {
+      path: "/apply/create-account",
+      name: "applyCreateAccount",
+      component: ApplyCreateAccountView,
+    },
     {
       path: "/donate/trip/:tripSlug/participant/:personSlug",
       name: "donorParticipant",
@@ -68,11 +76,24 @@ const router = createRouter({
 
 router.beforeEach((to, _from, next) => {
   const user = Utils.getStore("user");
-  const publicRoutes = ["login", "donorTrip", "donorParticipant", "orgTrips", "publicTrip"];
+  const publicRoutes = [
+    "login",
+    "donorTrip",
+    "donorParticipant",
+    "orgTrips",
+    "publicTrip",
+    "applyAuth",
+    "applyCreateAccount",
+  ];
+  const applyAuthRoutes = ["applyAuth", "applyCreateAccount"];
   if (publicRoutes.includes(to.name)) {
     if (to.name === "login" && user) {
       const redirect = typeof to.query.redirect === "string" ? to.query.redirect : "";
       if (redirect.startsWith("/") && !redirect.startsWith("//")) next(redirect);
+      else next({ name: "home" });
+    } else if (applyAuthRoutes.includes(to.name) && user) {
+      const tripId = to.query.tripId ? String(to.query.tripId) : "";
+      if (tripId) next({ name: "tripBrowse", params: { tripId } });
       else next({ name: "home" });
     } else next();
     return;

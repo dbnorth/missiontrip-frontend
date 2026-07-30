@@ -36,9 +36,12 @@ const { formError, formNotice, prepareSave, onLoadStart, onLoadSuccess, handleSa
   useVersionConflictForm();
 const formRef = ref(null);
 const form = ref(emptyForm());
+const showChangePasswordDialog = ref(false);
 const currentPassword = ref("");
 const newPassword = ref("");
 const confirmPassword = ref("");
+const passwordError = ref("");
+const passwordSaving = ref(false);
 const pictureFile = ref(null);
 const picturePreview = ref(null);
 
@@ -46,6 +49,17 @@ const resetPasswordFields = () => {
   currentPassword.value = "";
   newPassword.value = "";
   confirmPassword.value = "";
+  passwordError.value = "";
+};
+
+const closeChangePasswordDialog = () => {
+  showChangePasswordDialog.value = false;
+  resetPasswordFields();
+};
+
+const openChangePasswordDialog = () => {
+  resetPasswordFields();
+  showChangePasswordDialog.value = true;
 };
 
 const clearPictureSelection = () => {
@@ -115,7 +129,7 @@ const canEditAdminFlag = computed(
 
 const canChangePassword = computed(() => !!form.value.userId);
 
-const showSelfPasswordFields = computed(() => isSelfProfile.value && canChangePassword.value);
+const showChangePasswordButton = computed(() => isSelfProfile.value && canChangePassword.value);
 
 const showAdminPasswordField = computed(() => !isSelfProfile.value && canChangePassword.value);
 
@@ -262,45 +276,23 @@ watch(
   () => [props.modelValue, props.personId],
   ([open, id]) => {
     if (open && id) {
-      resetPasswordFields();
+      closeChangePasswordDialog();
       loadPerson();
     }
     if (!open) {
-      resetPasswordFields();
+      closeChangePasswordDialog();
       clearPictureSelection();
     }
   }
 );
 
 const close = () => {
-  resetPasswordFields();
+  closeChangePasswordDialog();
   clearPictureSelection();
   emit("update:modelValue", false);
 };
 
-const validatePasswordChange = () => {
-  if (showSelfPasswordFields.value) {
-    const hasAny = currentPassword.value || newPassword.value || confirmPassword.value;
-    if (!hasAny) return true;
-    if (!currentPassword.value) {
-      formError.value = "Current password is required to change your password.";
-      return false;
-    }
-    if (!newPassword.value) {
-      formError.value = "New password is required.";
-      return false;
-    }
-    if (newPassword.value.length < 8) {
-      formError.value = "New password must be at least 8 characters.";
-      return false;
-    }
-    if (newPassword.value !== confirmPassword.value) {
-      formError.value = "New passwords do not match.";
-      return false;
-    }
-    return true;
-  }
-
+const validateAdminPassword = () => {
   if (showAdminPasswordField.value && newPassword.value) {
     if (newPassword.value.length < 8) {
       formError.value = "Password must be at least 8 characters.";
@@ -308,6 +300,39 @@ const validatePasswordChange = () => {
     }
   }
   return true;
+};
+
+const saveChangePassword = async () => {
+  passwordError.value = "";
+  if (!currentPassword.value) {
+    passwordError.value = "Current password is required.";
+    return;
+  }
+  if (!newPassword.value) {
+    passwordError.value = "New password is required.";
+    return;
+  }
+  if (newPassword.value.length < 8) {
+    passwordError.value = "New password must be at least 8 characters.";
+    return;
+  }
+  if (newPassword.value !== confirmPassword.value) {
+    passwordError.value = "New passwords do not match.";
+    return;
+  }
+
+  passwordSaving.value = true;
+  try {
+    await AuthServices.changePassword({
+      currentPassword: currentPassword.value,
+      newPassword: newPassword.value,
+    });
+    closeChangePasswordDialog();
+  } catch (e) {
+    passwordError.value = e.response?.data?.message || "Unable to change password.";
+  } finally {
+    passwordSaving.value = false;
+  }
 };
 
 const save = async () => {
@@ -342,19 +367,12 @@ const save = async () => {
     formError.value = `Emergency contact: ${emergencyPhoneValidation}`;
     return;
   }
-  if (!validatePasswordChange()) return;
+  if (!validateAdminPassword()) return;
 
   saving.value = true;
   prepareSave();
 
   try {
-    if (showSelfPasswordFields.value && newPassword.value) {
-      await AuthServices.changePassword({
-        currentPassword: currentPassword.value,
-        newPassword: newPassword.value,
-      });
-    }
-
     const address = normalizeAddressFields(form.value);
 
     const payload = {
@@ -447,31 +465,15 @@ const save = async () => {
             class="mb-2"
           />
 
-          <template v-if="showSelfPasswordFields">
-            <div class="text-subtitle-2 mb-2 mt-2">Change password</div>
-            <v-text-field
-              v-model="currentPassword"
-              label="Current password"
-              type="password"
-              density="compact"
-              autocomplete="current-password"
-            />
-            <v-text-field
-              v-model="newPassword"
-              label="New password"
-              type="password"
-              density="compact"
-              autocomplete="new-password"
-            />
-            <v-text-field
-              v-model="confirmPassword"
-              label="Confirm new password"
-              type="password"
-              density="compact"
-              autocomplete="new-password"
-              class="mb-2"
-            />
-          </template>
+          <v-btn
+            v-if="showChangePasswordButton"
+            type="button"
+            variant="tonal"
+            class="mb-3"
+            @click="openChangePasswordDialog"
+          >
+            Change password
+          </v-btn>
 
           <v-text-field
             v-else-if="showAdminPasswordField"
@@ -604,6 +606,58 @@ const save = async () => {
         <v-spacer />
         <v-btn type="button" variant="text" @click="close">Cancel</v-btn>
         <v-btn type="button" color="primary" :loading="saving" :disabled="loading" @click="save">Save</v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
+
+  <v-dialog
+    v-model="showChangePasswordDialog"
+    max-width="440"
+    persistent
+  >
+    <v-card>
+      <v-card-title>Change password</v-card-title>
+      <v-card-text>
+        <v-text-field
+          v-model="currentPassword"
+          label="Current password"
+          type="password"
+          density="compact"
+          autocomplete="current-password"
+        />
+        <v-text-field
+          v-model="newPassword"
+          label="New password"
+          type="password"
+          density="compact"
+          autocomplete="new-password"
+          hint="At least 8 characters"
+          persistent-hint
+        />
+        <v-text-field
+          v-model="confirmPassword"
+          label="Confirm new password"
+          type="password"
+          density="compact"
+          autocomplete="new-password"
+        />
+        <v-alert v-if="passwordError" type="error" density="compact" class="mt-2">
+          {{ passwordError }}
+        </v-alert>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn type="button" variant="text" :disabled="passwordSaving" @click="closeChangePasswordDialog">
+          Cancel
+        </v-btn>
+        <v-btn
+          type="button"
+          color="primary"
+          :loading="passwordSaving"
+          @click="saveChangePassword"
+        >
+          Save
+        </v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
